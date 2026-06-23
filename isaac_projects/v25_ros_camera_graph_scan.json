@@ -1,0 +1,1235 @@
+[
+  {
+    "path": "/World/TrashCamera",
+    "type": "Camera",
+    "attrs": [
+      {
+        "name": "omni:kit:cameraLock",
+        "type": "bool",
+        "value": "True"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashCamera/OmniverseKitViewportCameraMesh",
+    "type": "Xform",
+    "attrs": []
+  },
+  {
+    "path": "/World/TrashCamera/OmniverseKitViewportCameraMesh/CameraModel",
+    "type": "Mesh",
+    "attrs": []
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_plastic_bottle/Looks/MatBottle/diffuseTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_plastic_bottle/Looks/MatBottle/opacityTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_plastic_bottle/Looks/MatLabel/diffuseTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_plastic_bottle/Looks/MatCap_001/diffuseTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_can/Looks/Material/diffuseTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_paper_box/Looks/Material_001/diffuseTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_paper_box/Looks/Material_001/normalTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_paper_box/Looks/Material_001/metallicTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_paper_box/Looks/Material_001/roughnessTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_apple_core/Looks/Material_35/diffuseTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_banana_peel/Looks/PM3D_Cylinder3D_1_2/diffuseTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_banana_peel/Looks/PM3D_Cylinder3D_1_2/normalTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_banana_peel/Looks/PM3D_Cylinder3D_1_2/metallicTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_banana_peel/Looks/PM3D_Cylinder3D_1_2/roughnessTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_battery/Looks/Scene___Root/diffuseTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_battery/Looks/Scene___Root/normalTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_battery/Looks/Scene___Root/metallicTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_battery/Looks/Scene___Root/roughnessTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_medicine_box/Looks/box_Cube_1/diffuseTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_broken_cup/Looks/initialShadingGroup/diffuseTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_tissue/Looks/Scene___Root/diffuseTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_tissue/Looks/Scene___Root/metallicTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_tissue/Looks/Scene___Root/roughnessTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_dirty_bottle/Looks/MatBottle/diffuseTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_dirty_bottle/Looks/MatBottle/opacityTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_dirty_bottle/Looks/MatLabel/diffuseTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashSortingScene/trash_dirty_bottle/Looks/MatCap_001/diffuseTex",
+    "type": "Shader",
+    "attrs": [
+      {
+        "name": "outputs:rgb",
+        "type": "float3",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/YOLO_DomeLight",
+    "type": "DomeLight",
+    "attrs": [
+      {
+        "name": "collection:lightLink:membershipExpression",
+        "type": "pathExpression",
+        "value": "None"
+      },
+      {
+        "name": "collection:shadowLink:membershipExpression",
+        "type": "pathExpression",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/YOLO_TopRectLight",
+    "type": "RectLight",
+    "attrs": [
+      {
+        "name": "collection:lightLink:membershipExpression",
+        "type": "pathExpression",
+        "value": "None"
+      },
+      {
+        "name": "collection:shadowLink:membershipExpression",
+        "type": "pathExpression",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/World/TrashBotHeadCamera",
+    "type": "Camera",
+    "attrs": []
+  },
+  {
+    "path": "/World/TrashBotHeadCamera/OmniverseKitViewportCameraMesh",
+    "type": "Xform",
+    "attrs": []
+  },
+  {
+    "path": "/World/TrashBotHeadCamera/OmniverseKitViewportCameraMesh/CameraModel",
+    "type": "Mesh",
+    "attrs": []
+  },
+  {
+    "path": "/Environment/defaultLight",
+    "type": "DistantLight",
+    "attrs": [
+      {
+        "name": "collection:lightLink:membershipExpression",
+        "type": "pathExpression",
+        "value": "None"
+      },
+      {
+        "name": "collection:shadowLink:membershipExpression",
+        "type": "pathExpression",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/Render",
+    "type": "",
+    "attrs": []
+  },
+  {
+    "path": "/Render/OmniverseKit",
+    "type": "",
+    "attrs": []
+  },
+  {
+    "path": "/Render/OmniverseKit/HydraTextures",
+    "type": "",
+    "attrs": []
+  },
+  {
+    "path": "/Render/OmniverseKit/HydraTextures/omni_kit_widget_viewport_ViewportTexture_0",
+    "type": "RenderProduct",
+    "attrs": [
+      {
+        "name": "ogPostProcessPath",
+        "type": "string",
+        "value": "/Render/OmniverseKit/HydraTextures/omni_kit_widget_viewport_ViewportTexture_0/PostRender"
+      },
+      {
+        "name": "omni:rtx:background:source:texture:path",
+        "type": "asset",
+        "value": "@@"
+      },
+      {
+        "name": "omni:rtx:dlss:frameGeneration",
+        "type": "bool",
+        "value": "False"
+      },
+      {
+        "name": "omni:rtx:lightspeed:lightspeed:nrd:reblur:diffuse:maxAccumulatedFrameNum",
+        "type": "int",
+        "value": "31"
+      },
+      {
+        "name": "omni:rtx:lightspeed:nrd:relax:diffuseFastHistoryFrames",
+        "type": "int",
+        "value": "2"
+      },
+      {
+        "name": "omni:rtx:lightspeed:nrd:relax:diffuseHistoryFrames",
+        "type": "int",
+        "value": "31"
+      },
+      {
+        "name": "omni:rtx:lightspeed:nrd:relax:disocclusionFixNumFramesToFix",
+        "type": "int",
+        "value": "3"
+      },
+      {
+        "name": "omni:rtx:lightspeed:nrd:relax:specular:fastHistoryFrames",
+        "type": "int",
+        "value": "8"
+      },
+      {
+        "name": "omni:rtx:lightspeed:nrd:relax:specular:historyFrames",
+        "type": "int",
+        "value": "31"
+      },
+      {
+        "name": "omni:rtx:lightspeed:relax:disocclusion:fix:numFramesToFix",
+        "type": "float",
+        "value": "3.0"
+      },
+      {
+        "name": "omni:rtx:material:db:flattener:emission_color_image",
+        "type": "string[]",
+        "value": "[emission_color_image]"
+      },
+      {
+        "name": "omni:rtx:material:db:flattener:emission_intensity_image",
+        "type": "string[]",
+        "value": "[emission_intensity_image]"
+      },
+      {
+        "name": "omni:rtx:post:lensDistortion:cameraFocalLength",
+        "type": "float",
+        "value": "100.0"
+      },
+      {
+        "name": "omni:rtx:post:tonemap:enableSrgbToGamma",
+        "type": "bool",
+        "value": "True"
+      },
+      {
+        "name": "omni:rtx:rendermode",
+        "type": "token",
+        "value": "RealTimePathTracing"
+      },
+      {
+        "name": "omni:rtx:rt:caustics:useFrameSeed",
+        "type": "bool",
+        "value": "False"
+      },
+      {
+        "name": "omni:rtx:rt:cfgpuCameraJitter",
+        "type": "bool",
+        "value": "False"
+      },
+      {
+        "name": "omni:rtx:rt:ecoMode:maxFramesWithoutChange",
+        "type": "uint",
+        "value": "500"
+      },
+      {
+        "name": "omni:rtx:rt:inscattering:maxAccumulationFrames",
+        "type": "int",
+        "value": "128"
+      },
+      {
+        "name": "omni:rtx:rtpt:cached:terminatePathOnFirstDiffuseHit",
+        "type": "bool",
+        "value": "True"
+      },
+      {
+        "name": "omni:rtx:rtpt:cfgpuCameraJitter",
+        "type": "bool",
+        "value": "False"
+      },
+      {
+        "name": "omni:rtx:rtpt:usePathSplitting",
+        "type": "bool",
+        "value": "True"
+      },
+      {
+        "name": "omni:rtx:scene:hydra:alwaysTickRenderer",
+        "type": "bool",
+        "value": "False"
+      },
+      {
+        "name": "omni:rtx:scene:hydra:TBNFrameMode",
+        "type": "int",
+        "value": "0"
+      },
+      {
+        "name": "omni:rtx:scene:renderMeterPerUnit",
+        "type": "float",
+        "value": "-1.0"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:bilateral:normal:sigmaExponent",
+        "type": "float",
+        "value": "16.0"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:bilateral:normal:weightCutoff",
+        "type": "float",
+        "value": "0.10000000149011612"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:bilateral:position:sigma",
+        "type": "float",
+        "value": "0.0010000000474974513"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:bilateral:position:sigmaExponent",
+        "type": "float",
+        "value": "1.5"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:bilateral:position:sigmaScale",
+        "type": "float",
+        "value": "100.0"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:bilateral:position:weightCutoff",
+        "type": "float",
+        "value": "0.10000000149011612"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:debugOutput:reprojectedNormals",
+        "type": "bool",
+        "value": "False"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:occlusion:checkRange",
+        "type": "float",
+        "value": "300.0"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:occlusion:weightCutoff",
+        "type": "float",
+        "value": "0.10000000149011612"
+      },
+      {
+        "name": "omni:rtx:wireframe:enabled",
+        "type": "bool",
+        "value": "True"
+      },
+      {
+        "name": "omni:rtx:wireframe:mode",
+        "type": "token",
+        "value": "instance"
+      },
+      {
+        "name": "omni:rtx:wireframe:perPrimThicknessWorldSpace",
+        "type": "bool",
+        "value": "True"
+      },
+      {
+        "name": "omni:rtx:wireframe:shading:enabled",
+        "type": "bool",
+        "value": "True"
+      },
+      {
+        "name": "omni:rtx:wireframe:thickness",
+        "type": "float",
+        "value": "0.30000001192092896"
+      },
+      {
+        "name": "omni:rtx:wireframePrimThicknessWorldSpace",
+        "type": "bool",
+        "value": "False"
+      }
+    ]
+  },
+  {
+    "path": "/Render/OmniverseKit/HydraTextures/Replicator",
+    "type": "RenderProduct",
+    "attrs": [
+      {
+        "name": "omni:rtx:background:source:texture:path",
+        "type": "asset",
+        "value": "@@"
+      },
+      {
+        "name": "omni:rtx:dlss:frameGeneration",
+        "type": "bool",
+        "value": "False"
+      },
+      {
+        "name": "omni:rtx:lightspeed:lightspeed:nrd:reblur:diffuse:maxAccumulatedFrameNum",
+        "type": "int",
+        "value": "31"
+      },
+      {
+        "name": "omni:rtx:lightspeed:nrd:relax:diffuseFastHistoryFrames",
+        "type": "int",
+        "value": "2"
+      },
+      {
+        "name": "omni:rtx:lightspeed:nrd:relax:diffuseHistoryFrames",
+        "type": "int",
+        "value": "31"
+      },
+      {
+        "name": "omni:rtx:lightspeed:nrd:relax:disocclusionFixNumFramesToFix",
+        "type": "int",
+        "value": "3"
+      },
+      {
+        "name": "omni:rtx:lightspeed:nrd:relax:specular:fastHistoryFrames",
+        "type": "int",
+        "value": "8"
+      },
+      {
+        "name": "omni:rtx:lightspeed:nrd:relax:specular:historyFrames",
+        "type": "int",
+        "value": "31"
+      },
+      {
+        "name": "omni:rtx:lightspeed:relax:disocclusion:fix:numFramesToFix",
+        "type": "float",
+        "value": "3.0"
+      },
+      {
+        "name": "omni:rtx:material:db:flattener:emission_color_image",
+        "type": "string[]",
+        "value": "[emission_color_image]"
+      },
+      {
+        "name": "omni:rtx:material:db:flattener:emission_intensity_image",
+        "type": "string[]",
+        "value": "[emission_intensity_image]"
+      },
+      {
+        "name": "omni:rtx:post:lensDistortion:cameraFocalLength",
+        "type": "float",
+        "value": "100.0"
+      },
+      {
+        "name": "omni:rtx:post:tonemap:enableSrgbToGamma",
+        "type": "bool",
+        "value": "True"
+      },
+      {
+        "name": "omni:rtx:rendermode",
+        "type": "token",
+        "value": "RealTimePathTracing"
+      },
+      {
+        "name": "omni:rtx:rt:caustics:useFrameSeed",
+        "type": "bool",
+        "value": "False"
+      },
+      {
+        "name": "omni:rtx:rt:cfgpuCameraJitter",
+        "type": "bool",
+        "value": "False"
+      },
+      {
+        "name": "omni:rtx:rt:ecoMode:maxFramesWithoutChange",
+        "type": "uint",
+        "value": "500"
+      },
+      {
+        "name": "omni:rtx:rt:inscattering:maxAccumulationFrames",
+        "type": "int",
+        "value": "128"
+      },
+      {
+        "name": "omni:rtx:rtpt:cached:terminatePathOnFirstDiffuseHit",
+        "type": "bool",
+        "value": "True"
+      },
+      {
+        "name": "omni:rtx:rtpt:cfgpuCameraJitter",
+        "type": "bool",
+        "value": "False"
+      },
+      {
+        "name": "omni:rtx:rtpt:usePathSplitting",
+        "type": "bool",
+        "value": "True"
+      },
+      {
+        "name": "omni:rtx:scene:hydra:alwaysTickRenderer",
+        "type": "bool",
+        "value": "False"
+      },
+      {
+        "name": "omni:rtx:scene:hydra:TBNFrameMode",
+        "type": "int",
+        "value": "0"
+      },
+      {
+        "name": "omni:rtx:scene:renderMeterPerUnit",
+        "type": "float",
+        "value": "-1.0"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:bilateral:normal:sigmaExponent",
+        "type": "float",
+        "value": "16.0"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:bilateral:normal:weightCutoff",
+        "type": "float",
+        "value": "0.10000000149011612"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:bilateral:position:sigma",
+        "type": "float",
+        "value": "0.0010000000474974513"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:bilateral:position:sigmaExponent",
+        "type": "float",
+        "value": "1.5"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:bilateral:position:sigmaScale",
+        "type": "float",
+        "value": "100.0"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:bilateral:position:weightCutoff",
+        "type": "float",
+        "value": "0.10000000149011612"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:debugOutput:reprojectedNormals",
+        "type": "bool",
+        "value": "False"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:occlusion:checkRange",
+        "type": "float",
+        "value": "300.0"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:occlusion:weightCutoff",
+        "type": "float",
+        "value": "0.10000000149011612"
+      },
+      {
+        "name": "omni:rtx:wireframe:enabled",
+        "type": "bool",
+        "value": "True"
+      },
+      {
+        "name": "omni:rtx:wireframe:mode",
+        "type": "token",
+        "value": "instance"
+      },
+      {
+        "name": "omni:rtx:wireframe:perPrimThicknessWorldSpace",
+        "type": "bool",
+        "value": "True"
+      },
+      {
+        "name": "omni:rtx:wireframe:shading:enabled",
+        "type": "bool",
+        "value": "True"
+      },
+      {
+        "name": "omni:rtx:wireframe:thickness",
+        "type": "float",
+        "value": "0.30000001192092896"
+      },
+      {
+        "name": "omni:rtx:wireframePrimThicknessWorldSpace",
+        "type": "bool",
+        "value": "False"
+      }
+    ]
+  },
+  {
+    "path": "/Render/OmniverseKit/HydraTextures/Replicator_01",
+    "type": "RenderProduct",
+    "attrs": [
+      {
+        "name": "omni:rtx:background:source:texture:path",
+        "type": "asset",
+        "value": "@@"
+      },
+      {
+        "name": "omni:rtx:dlss:frameGeneration",
+        "type": "bool",
+        "value": "False"
+      },
+      {
+        "name": "omni:rtx:lightspeed:lightspeed:nrd:reblur:diffuse:maxAccumulatedFrameNum",
+        "type": "int",
+        "value": "31"
+      },
+      {
+        "name": "omni:rtx:lightspeed:nrd:relax:diffuseFastHistoryFrames",
+        "type": "int",
+        "value": "2"
+      },
+      {
+        "name": "omni:rtx:lightspeed:nrd:relax:diffuseHistoryFrames",
+        "type": "int",
+        "value": "31"
+      },
+      {
+        "name": "omni:rtx:lightspeed:nrd:relax:disocclusionFixNumFramesToFix",
+        "type": "int",
+        "value": "3"
+      },
+      {
+        "name": "omni:rtx:lightspeed:nrd:relax:specular:fastHistoryFrames",
+        "type": "int",
+        "value": "8"
+      },
+      {
+        "name": "omni:rtx:lightspeed:nrd:relax:specular:historyFrames",
+        "type": "int",
+        "value": "31"
+      },
+      {
+        "name": "omni:rtx:lightspeed:relax:disocclusion:fix:numFramesToFix",
+        "type": "float",
+        "value": "3.0"
+      },
+      {
+        "name": "omni:rtx:material:db:flattener:emission_color_image",
+        "type": "string[]",
+        "value": "[emission_color_image]"
+      },
+      {
+        "name": "omni:rtx:material:db:flattener:emission_intensity_image",
+        "type": "string[]",
+        "value": "[emission_intensity_image]"
+      },
+      {
+        "name": "omni:rtx:post:lensDistortion:cameraFocalLength",
+        "type": "float",
+        "value": "100.0"
+      },
+      {
+        "name": "omni:rtx:post:tonemap:enableSrgbToGamma",
+        "type": "bool",
+        "value": "True"
+      },
+      {
+        "name": "omni:rtx:rendermode",
+        "type": "token",
+        "value": "RealTimePathTracing"
+      },
+      {
+        "name": "omni:rtx:rt:caustics:useFrameSeed",
+        "type": "bool",
+        "value": "False"
+      },
+      {
+        "name": "omni:rtx:rt:cfgpuCameraJitter",
+        "type": "bool",
+        "value": "False"
+      },
+      {
+        "name": "omni:rtx:rt:ecoMode:maxFramesWithoutChange",
+        "type": "uint",
+        "value": "500"
+      },
+      {
+        "name": "omni:rtx:rt:inscattering:maxAccumulationFrames",
+        "type": "int",
+        "value": "128"
+      },
+      {
+        "name": "omni:rtx:rtpt:cached:terminatePathOnFirstDiffuseHit",
+        "type": "bool",
+        "value": "True"
+      },
+      {
+        "name": "omni:rtx:rtpt:cfgpuCameraJitter",
+        "type": "bool",
+        "value": "False"
+      },
+      {
+        "name": "omni:rtx:rtpt:usePathSplitting",
+        "type": "bool",
+        "value": "True"
+      },
+      {
+        "name": "omni:rtx:scene:hydra:alwaysTickRenderer",
+        "type": "bool",
+        "value": "False"
+      },
+      {
+        "name": "omni:rtx:scene:hydra:TBNFrameMode",
+        "type": "int",
+        "value": "0"
+      },
+      {
+        "name": "omni:rtx:scene:renderMeterPerUnit",
+        "type": "float",
+        "value": "-1.0"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:bilateral:normal:sigmaExponent",
+        "type": "float",
+        "value": "16.0"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:bilateral:normal:weightCutoff",
+        "type": "float",
+        "value": "0.10000000149011612"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:bilateral:position:sigma",
+        "type": "float",
+        "value": "0.0010000000474974513"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:bilateral:position:sigmaExponent",
+        "type": "float",
+        "value": "1.5"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:bilateral:position:sigmaScale",
+        "type": "float",
+        "value": "100.0"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:bilateral:position:weightCutoff",
+        "type": "float",
+        "value": "0.10000000149011612"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:debugOutput:reprojectedNormals",
+        "type": "bool",
+        "value": "False"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:occlusion:checkRange",
+        "type": "float",
+        "value": "300.0"
+      },
+      {
+        "name": "omni:rtx:sdg:crossCamera:occlusion:weightCutoff",
+        "type": "float",
+        "value": "0.10000000149011612"
+      },
+      {
+        "name": "omni:rtx:wireframe:enabled",
+        "type": "bool",
+        "value": "True"
+      },
+      {
+        "name": "omni:rtx:wireframe:mode",
+        "type": "token",
+        "value": "instance"
+      },
+      {
+        "name": "omni:rtx:wireframe:perPrimThicknessWorldSpace",
+        "type": "bool",
+        "value": "True"
+      },
+      {
+        "name": "omni:rtx:wireframe:shading:enabled",
+        "type": "bool",
+        "value": "True"
+      },
+      {
+        "name": "omni:rtx:wireframe:thickness",
+        "type": "float",
+        "value": "0.30000001192092896"
+      },
+      {
+        "name": "omni:rtx:wireframePrimThicknessWorldSpace",
+        "type": "bool",
+        "value": "False"
+      }
+    ]
+  },
+  {
+    "path": "/Render/OmniverseGlobalRenderSettings",
+    "type": "RenderSettings",
+    "attrs": [
+      {
+        "name": "renderingColorSpace",
+        "type": "token",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/Render/Vars",
+    "type": "",
+    "attrs": []
+  },
+  {
+    "path": "/Render/Vars/LdrColor",
+    "type": "RenderVar",
+    "attrs": []
+  },
+  {
+    "path": "/OmniverseKit_Persp",
+    "type": "Camera",
+    "attrs": []
+  },
+  {
+    "path": "/Graph",
+    "type": "",
+    "attrs": []
+  },
+  {
+    "path": "/Graph/ROS_Clock",
+    "type": "OmniGraph",
+    "attrs": []
+  },
+  {
+    "path": "/Graph/ROS_Clock/OnPlaybackTick",
+    "type": "OmniGraphNode",
+    "attrs": [
+      {
+        "name": "outputs:frame",
+        "type": "double",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/Graph/ROS_Clock/ReadSimTime",
+    "type": "OmniGraphNode",
+    "attrs": []
+  },
+  {
+    "path": "/Graph/ROS_Clock/PublishClock",
+    "type": "OmniGraphNode",
+    "attrs": [
+      {
+        "name": "inputs:topicName",
+        "type": "string",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/Graph/ROS_Clock/Context",
+    "type": "OmniGraphNode",
+    "attrs": []
+  },
+  {
+    "path": "/Graph/ROS_Camera",
+    "type": "OmniGraph",
+    "attrs": []
+  },
+  {
+    "path": "/Graph/ROS_Camera/OnPlaybackTick",
+    "type": "OmniGraphNode",
+    "attrs": [
+      {
+        "name": "outputs:frame",
+        "type": "double",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/Graph/ROS_Camera/CameraInfoPublish",
+    "type": "OmniGraphNode",
+    "attrs": [
+      {
+        "name": "inputs:frameId",
+        "type": "string",
+        "value": "trash_camera"
+      },
+      {
+        "name": "inputs:frameIdRight",
+        "type": "string",
+        "value": "None"
+      },
+      {
+        "name": "inputs:frameSkipCount",
+        "type": "uint",
+        "value": "None"
+      },
+      {
+        "name": "inputs:renderProductPath",
+        "type": "token",
+        "value": "None"
+      },
+      {
+        "name": "inputs:renderProductPathRight",
+        "type": "token",
+        "value": "None"
+      },
+      {
+        "name": "inputs:topicName",
+        "type": "string",
+        "value": "camera_info"
+      },
+      {
+        "name": "inputs:topicNameRight",
+        "type": "string",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/Graph/ROS_Camera/RenderProduct",
+    "type": "OmniGraphNode",
+    "attrs": [
+      {
+        "name": "node:type",
+        "type": "token",
+        "value": "isaacsim.core.nodes.IsaacCreateRenderProduct"
+      },
+      {
+        "name": "outputs:renderProductPath",
+        "type": "token",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/Graph/ROS_Camera/RunOnce",
+    "type": "OmniGraphNode",
+    "attrs": []
+  },
+  {
+    "path": "/Graph/ROS_Camera/Context",
+    "type": "OmniGraphNode",
+    "attrs": []
+  },
+  {
+    "path": "/Graph/ROS_Camera/RGBPublish",
+    "type": "OmniGraphNode",
+    "attrs": [
+      {
+        "name": "inputs:frameId",
+        "type": "string",
+        "value": "trash_camera"
+      },
+      {
+        "name": "inputs:frameSkipCount",
+        "type": "uint",
+        "value": "None"
+      },
+      {
+        "name": "inputs:renderProductPath",
+        "type": "token",
+        "value": "None"
+      },
+      {
+        "name": "inputs:semanticLabelsTopicName",
+        "type": "string",
+        "value": "None"
+      },
+      {
+        "name": "inputs:topicName",
+        "type": "string",
+        "value": "camera/rgb"
+      }
+    ]
+  },
+  {
+    "path": "/OmniverseKit_Top",
+    "type": "Camera",
+    "attrs": []
+  },
+  {
+    "path": "/OmniverseKit_Front",
+    "type": "Camera",
+    "attrs": []
+  },
+  {
+    "path": "/OmniverseKit_Right",
+    "type": "Camera",
+    "attrs": []
+  },
+  {
+    "path": "/OmniKit_Viewport_LightRig/Lights/DomeLight",
+    "type": "DomeLight",
+    "attrs": [
+      {
+        "name": "collection:lightLink:membershipExpression",
+        "type": "pathExpression",
+        "value": "None"
+      },
+      {
+        "name": "collection:shadowLink:membershipExpression",
+        "type": "pathExpression",
+        "value": "None"
+      }
+    ]
+  },
+  {
+    "path": "/OmniKit_Viewport_LightRig/Lights/DistantLight",
+    "type": "DistantLight",
+    "attrs": [
+      {
+        "name": "collection:lightLink:membershipExpression",
+        "type": "pathExpression",
+        "value": "None"
+      },
+      {
+        "name": "collection:shadowLink:membershipExpression",
+        "type": "pathExpression",
+        "value": "None"
+      }
+    ]
+  }
+]

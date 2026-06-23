@@ -1,0 +1,11 @@
+﻿execution_order,task_id,garbage_category_cn,target_bin_cn,confidence,object_prim,bin_prim,action_code,status,grasp_success,placement_success,target_bin_correct,end_to_end_success,duration_sec
+1,task_005,有害垃圾,红色有害垃圾桶,0.9558,/World/TrashSortingScene/trash_medicine_box,/World/TrashSortingScene/bin_hazardous_red,2,success,True,True,True,True,2.147
+2,task_010,有害垃圾,红色有害垃圾桶,0.7916,/World/TrashSortingScene/trash_battery,/World/TrashSortingScene/bin_hazardous_red,2,success,True,True,True,True,2.171
+3,task_001,厨余垃圾,绿色厨余垃圾桶,0.97,/World/TrashSortingScene/trash_apple_core,/World/TrashSortingScene/bin_kitchen_green,3,success,True,True,True,True,2.153
+4,task_008,厨余垃圾,绿色厨余垃圾桶,0.8891,/World/TrashSortingScene/trash_banana_peel,/World/TrashSortingScene/bin_kitchen_green,3,success,True,True,True,True,2.087
+5,task_003,可回收垃圾,蓝色可回收垃圾桶,0.964,/World/TrashSortingScene/trash_tissue,/World/TrashSortingScene/bin_recyclable_blue,1,success,True,True,True,True,2.094
+6,task_004,可回收垃圾,蓝色可回收垃圾桶,0.9635,/World/TrashSortingScene/trash_can,/World/TrashSortingScene/bin_recyclable_blue,1,success,True,True,True,True,2.112
+7,task_006,可回收垃圾,蓝色可回收垃圾桶,0.9509,/World/TrashSortingScene/trash_paper_box,/World/TrashSortingScene/bin_recyclable_blue,1,success,True,True,True,True,2.092
+8,task_007,可回收垃圾,蓝色可回收垃圾桶,0.9358,/World/TrashSortingScene/trash_plastic_bottle,/World/TrashSortingScene/bin_recyclable_blue,1,success,True,True,True,True,2.101
+9,task_009,可回收垃圾,蓝色可回收垃圾桶,0.8364,/World/TrashSortingScene/trash_dirty_bottle,/World/TrashSortingScene/bin_recyclable_blue,1,success,True,True,True,True,2.22
+10,task_002,其他垃圾,灰色其他垃圾桶,0.9652,/World/TrashSortingScene/trash_broken_cup,/World/TrashSortingScene/bin_other_gray,4,success,True,True,True,True,2.131

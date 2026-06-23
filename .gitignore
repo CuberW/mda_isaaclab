@@ -1,0 +1,15 @@
+# Task319 current mainline does not load these local optional model assets.
+# Keep models/yolo/yolov8m-seg.pt, models/graspnet-rs/checkpoint-rs.tar,
+# and optional models/anygrasp/checkpoint_detection.tar available for legacy/debug paths.
+/models/grounding-dino-base/
+/models/dinov2-base/
+/models/clip-vit-b32/
+/models/da3-small/
+/models/sam-vit-b/
+/models/yolo-world-light/
+/models/keepitsimple/
+/models/yolov8n.pt
+/models/yolov8s-worldv2.pt
+weights
+IsaacLab
+kuavo-ros-opensource

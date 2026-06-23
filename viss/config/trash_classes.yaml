@@ -1,0 +1,114 @@
+trash_classes:
+  potato:
+    class_name: potato
+    category: kitchen
+    target_bin: bin_kitchen_green
+    confidence: 1.0
+
+  rabbitcut:
+    class_name: rabbitcut
+    category: kitchen
+    target_bin: bin_kitchen_green
+    confidence: 1.0
+
+  potatocut:
+    class_name: potatocut
+    category: kitchen
+    target_bin: bin_kitchen_green
+    confidence: 1.0
+
+  mooli:
+    class_name: mooli
+    category: kitchen
+    target_bin: bin_kitchen_green
+    confidence: 1.0
+
+  battery:
+    class_name: battery
+    category: hazardous
+    target_bin: bin_hazardous_red
+    confidence: 1.0
+
+  battery1:
+    class_name: battery1
+    category: hazardous
+    target_bin: bin_hazardous_red
+    confidence: 1.0
+
+  battery5:
+    class_name: battery5
+    category: hazardous
+    target_bin: bin_hazardous_red
+    confidence: 1.0
+
+  drug:
+    class_name: drug
+    category: hazardous
+    target_bin: bin_hazardous_red
+    confidence: 1.0
+
+  drugbag:
+    class_name: drugbag
+    category: hazardous
+    target_bin: bin_hazardous_red
+    confidence: 1.0
+
+  drugbox:
+    class_name: drugbox
+    category: hazardous
+    target_bin: bin_hazardous_red
+    confidence: 1.0
+
+  capsule:
+    class_name: capsule
+    category: hazardous
+    target_bin: bin_hazardous_red
+    confidence: 1.0
+
+  bottle:
+    class_name: bottle
+    category: recyclable
+    target_bin: bin_recyclable_blue
+    confidence: 1.0
+
+  bottle2:
+    class_name: bottle2
+    category: recyclable
+    target_bin: bin_recyclable_blue
+    confidence: 1.0
+
+  can:
+    class_name: can
+    category: recyclable
+    target_bin: bin_recyclable_blue
+    confidence: 1.0
+
+  paper:
+    class_name: paper
+    category: recyclable
+    target_bin: bin_recyclable_blue
+    confidence: 1.0
+
+  brick:
+    class_name: brick
+    category: other
+    target_bin: bin_other_gray
+    confidence: 1.0
+
+  china:
+    class_name: china
+    category: other
+    target_bin: bin_other_gray
+    confidence: 1.0
+
+  stone:
+    class_name: stone
+    category: other
+    target_bin: bin_other_gray
+    confidence: 1.0
+
+  papercup:
+    class_name: papercup
+    category: recyclable
+    target_bin: bin_recyclable_blue
+    confidence: 1.0

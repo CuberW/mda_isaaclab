@@ -1,0 +1,16 @@
+bins:
+  recyclable:
+    prim_name: bin_recyclable_blue
+    position: [1.25, 0.60, 0.30]
+
+  kitchen:
+    prim_name: bin_kitchen_green
+    position: [1.25, 0.15, 0.30]
+
+  hazardous:
+    prim_name: bin_hazardous_red
+    position: [1.25, -0.30, 0.30]
+
+  other:
+    prim_name: bin_other_gray
+    position: [1.25, -0.75, 0.30]

@@ -1,0 +1,99 @@
+{
+  "message": "Trash objects restored to table layout.",
+  "num_restored": 10,
+  "num_missing": 0,
+  "restored": [
+    {
+      "path": "/World/TrashSortingScene/trash_plastic_bottle",
+      "position": [
+        -0.82,
+        0.3,
+        0.3662
+      ],
+      "half_height": 0.0562
+    },
+    {
+      "path": "/World/TrashSortingScene/trash_dirty_bottle",
+      "position": [
+        -0.45,
+        0.22,
+        0.3665
+      ],
+      "half_height": 0.0565
+    },
+    {
+      "path": "/World/TrashSortingScene/trash_can",
+      "position": [
+        -0.08,
+        0.34,
+        0.3691
+      ],
+      "half_height": 0.0591
+    },
+    {
+      "path": "/World/TrashSortingScene/trash_battery",
+      "position": [
+        -0.2,
+        -0.08,
+        0.3446
+      ],
+      "half_height": 0.0346
+    },
+    {
+      "path": "/World/TrashSortingScene/trash_medicine_box",
+      "position": [
+        0.24,
+        -0.08,
+        0.3968
+      ],
+      "half_height": 0.0868
+    },
+    {
+      "path": "/World/TrashSortingScene/trash_apple_core",
+      "position": [
+        -0.92,
+        -0.12,
+        0.4009
+      ],
+      "half_height": 0.0909
+    },
+    {
+      "path": "/World/TrashSortingScene/trash_banana_peel",
+      "position": [
+        -0.58,
+        -0.18,
+        0.3688
+      ],
+      "half_height": 0.0588
+    },
+    {
+      "path": "/World/TrashSortingScene/trash_paper_box",
+      "position": [
+        -0.48,
+        0.48,
+        0.3917
+      ],
+      "half_height": 0.0817
+    },
+    {
+      "path": "/World/TrashSortingScene/trash_broken_cup",
+      "position": [
+        -0.88,
+        -0.48,
+        0.445
+      ],
+      "half_height": 0.135
+    },
+    {
+      "path": "/World/TrashSortingScene/trash_tissue",
+      "position": [
+        -0.52,
+        -0.46,
+        0.411
+      ],
+      "half_height": 0.101
+    }
+  ],
+  "missing": [],
+  "clear_handshake_files": true
+}

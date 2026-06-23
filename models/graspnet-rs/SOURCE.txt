@@ -1,0 +1,3 @@
+Official GraspNet baseline RealSense checkpoint.
+Repository: https://github.com/graspnet/graspnet-baseline
+Expected filename: checkpoint-rs.tar

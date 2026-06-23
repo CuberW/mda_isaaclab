@@ -1,0 +1,732 @@
+import argparse
+import csv
+import json
+import subprocess
+import time
+import uuid
+from pathlib import Path
+
+
+ROOT = Path.home() / "trashbot_ws"
+LOG_DIR = ROOT / "data" / "logs"
+IMAGE_DIR = ROOT / "data" / "images"
+
+YOLO_PYTHON = Path.home() / "envs" / "yolo" / "bin" / "python"
+YOLO_WORKER_SCRIPT = ROOT / "scripts" / "v27_yolo_persistent_worker.py"
+YOLO_REQUEST_JSON = LOG_DIR / "v27_yolo_worker_request.json"
+YOLO_RESPONSE_JSON = LOG_DIR / "v27_yolo_worker_response.json"
+YOLO_READY_JSON = LOG_DIR / "v27_yolo_worker_ready.json"
+
+VIEW_COMMAND_JSON = Path("/mnt/d/isaac_projects/v26_view_command.json")
+VIEW_RESULT_JSON = Path("/mnt/d/isaac_projects/v26_view_result.json")
+PLAN_JSON = Path("/mnt/d/isaac_projects/v2_visual_task_plan.json")
+ACTION_RESULT_JSON = Path("/mnt/d/isaac_projects/v27_head_camera_action_result.json")
+
+RUN_LOG_JSON = LOG_DIR / "v27_head_camera_all_trash_fast_run_log.json"
+RUN_LOG_CSV = LOG_DIR / "v27_head_camera_all_trash_fast_run_table.csv"
+
+
+VIEW_CANDIDATES = [
+    {
+        "view_id": "front_mid",
+        "robot_xyz": [-0.35, -0.88, 0.0],
+        "look_at_xyz": [-0.65, -0.12, 0.30],
+    },
+    {
+        "view_id": "front_left",
+        "robot_xyz": [-0.70, -0.92, 0.0],
+        "look_at_xyz": [-0.75, -0.10, 0.30],
+    },
+    {
+        "view_id": "front_right",
+        "robot_xyz": [0.00, -0.92, 0.0],
+        "look_at_xyz": [-0.45, -0.10, 0.30],
+    },
+    {
+        "view_id": "near_mid",
+        "robot_xyz": [-0.45, -0.78, 0.0],
+        "look_at_xyz": [-0.65, -0.08, 0.30],
+    },
+    {
+        "view_id": "far_mid",
+        "robot_xyz": [-0.25, -1.08, 0.0],
+        "look_at_xyz": [-0.65, -0.12, 0.30],
+    },
+]
+
+
+def save_json_atomic(path: Path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    tmp.replace(path)
+
+
+def load_json(path: Path):
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_json_safe(path: Path):
+    try:
+        if not path.exists():
+            return None
+        return load_json(path)
+    except Exception:
+        return None
+
+
+def run_bash(command: str, timeout_sec: int = None):
+    print(f"[CMD] {command}")
+    result = subprocess.run(
+        ["bash", "-lc", command],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=timeout_sec,
+    )
+
+    if result.stdout:
+        print(result.stdout.strip())
+    if result.stderr:
+        print(result.stderr.strip())
+
+    if result.returncode != 0:
+        raise RuntimeError(f"Command failed: code={result.returncode}, cmd={command}")
+
+
+def clean_ipc_files():
+    for p in [
+        VIEW_COMMAND_JSON,
+        VIEW_RESULT_JSON,
+        PLAN_JSON,
+        ACTION_RESULT_JSON,
+        YOLO_REQUEST_JSON,
+        YOLO_RESPONSE_JSON,
+        YOLO_READY_JSON,
+    ]:
+        try:
+            if p.exists():
+                p.unlink()
+                print(f"[DELETE] {p}")
+        except Exception as e:
+            print(f"[WARN] failed delete {p}: {repr(e)}")
+
+
+def wait_json_field(path: Path, field: str, value, timeout_sec: float):
+    start = time.time()
+    while time.time() - start < timeout_sec:
+        data = load_json_safe(path)
+        if data is not None and data.get(field) == value:
+            return data
+        time.sleep(0.05)
+    raise TimeoutError(f"Timeout waiting {path} where {field}={value}")
+
+
+def start_yolo_worker(args):
+    if not YOLO_PYTHON.exists():
+        raise FileNotFoundError(f"YOLO python not found: {YOLO_PYTHON}")
+
+    for p in [YOLO_REQUEST_JSON, YOLO_RESPONSE_JSON, YOLO_READY_JSON]:
+        if p.exists():
+            p.unlink()
+
+    cmd = [
+        str(YOLO_PYTHON),
+        str(YOLO_WORKER_SCRIPT),
+        "--request-json", str(YOLO_REQUEST_JSON),
+        "--response-json", str(YOLO_RESPONSE_JSON),
+        "--ready-json", str(YOLO_READY_JSON),
+        "--model", str(args.model),
+        "--imgsz", str(args.imgsz),
+        "--device", args.yolo_device,
+        "--max-det", str(args.max_det),
+        "--max-area-ratio", str(args.max_area_ratio),
+    ]
+
+    print("[START YOLO WORKER]")
+    print(" ".join(cmd))
+
+    proc = subprocess.Popen(cmd)
+
+    start = time.time()
+    while time.time() - start < args.yolo_ready_timeout_sec:
+        ready = load_json_safe(YOLO_READY_JSON)
+        if ready is not None and ready.get("status") == "ready":
+            print("[YOLO READY]")
+            print(json.dumps(ready, ensure_ascii=False, indent=2))
+            return proc
+        if proc.poll() is not None:
+            raise RuntimeError(f"YOLO worker exited early: code={proc.returncode}")
+        time.sleep(0.1)
+
+    raise TimeoutError("Timeout waiting YOLO worker ready.")
+
+
+def stop_yolo_worker(proc):
+    if proc is None:
+        return
+
+    if proc.poll() is not None:
+        return
+
+    request_id = f"shutdown_{uuid.uuid4().hex[:8]}"
+    save_json_atomic(YOLO_REQUEST_JSON, {
+        "request_id": request_id,
+        "command": "shutdown",
+        "timestamp": time.time(),
+    })
+
+    try:
+        proc.wait(timeout=5)
+        print("[YOLO WORKER STOPPED]")
+    except Exception:
+        proc.terminate()
+        print("[YOLO WORKER TERMINATED]")
+
+
+def run_yolo_fast(image_path: Path, conf: float, args, save_overlay=False):
+    request_id = f"v27_yolo_{uuid.uuid4().hex[:8]}"
+
+    save_json_atomic(YOLO_REQUEST_JSON, {
+        "request_id": request_id,
+        "command": "infer",
+        "image_path": str(image_path),
+        "conf": float(conf),
+        "imgsz": int(args.imgsz),
+        "max_det": int(args.max_det),
+        "max_area_ratio": float(args.max_area_ratio),
+        "save_overlay": bool(save_overlay),
+        "timestamp": time.time(),
+    })
+
+    response = wait_json_field(
+        YOLO_RESPONSE_JSON,
+        "request_id",
+        request_id,
+        timeout_sec=args.yolo_infer_timeout_sec,
+    )
+
+    if response.get("status") != "success":
+        raise RuntimeError(json.dumps(response, ensure_ascii=False, indent=2))
+
+    return response["result"]
+
+
+def latest_fast_image(after_time=None):
+    candidates = list(IMAGE_DIR.glob("*_fast/frame_000001.jpg"))
+    if after_time is not None:
+        candidates = [p for p in candidates if p.stat().st_mtime >= after_time - 1.0]
+
+    if not candidates:
+        candidates = list(IMAGE_DIR.glob("*_fast/frame_000001.jpg"))
+
+    if not candidates:
+        raise FileNotFoundError("No *_fast/frame_000001.jpg found.")
+
+    return max(candidates, key=lambda p: p.stat().st_mtime)
+
+
+def collect_image(timeout_sec):
+    """
+    Robust ROS image collection.
+
+    First try with the user-provided timeout. If Isaac/ROS is temporarily slow,
+    retry once with a longer timeout instead of crashing the whole V2.7 loop.
+    """
+    t0 = time.time()
+
+    timeouts = [float(timeout_sec), max(6.0, float(timeout_sec) * 3.0)]
+
+    last_error = None
+
+    for idx, one_timeout in enumerate(timeouts, start=1):
+        cmd = (
+            "source ~/use_ros2_isaac.sh && "
+            "python3 ~/trashbot_ws/scripts/collect_one_ros_image_fast.py "
+            "--topic /trashbot/camera/rgb "
+            f"--timeout {one_timeout}"
+        )
+
+        try:
+            print(f"[COLLECT TRY {idx}] timeout={one_timeout}")
+            run_bash(cmd, timeout_sec=int(one_timeout) + 10)
+            img = latest_fast_image(after_time=t0)
+            print(f"[IMAGE] {img}")
+            return img
+
+        except Exception as e:
+            last_error = e
+            print(f"[COLLECT WARN] failed on try {idx}: {repr(e)}")
+            time.sleep(0.5)
+
+    raise RuntimeError(f"failed to collect image after retries: {repr(last_error)}")
+
+
+def write_view_command(view, args):
+    command_id = f"v27_view_{uuid.uuid4().hex[:8]}"
+
+    command = {
+        "mode": "V2_7_VIEW_COMMAND",
+        "command_id": command_id,
+        "view_id": view["view_id"],
+        "robot_xyz": view["robot_xyz"],
+        "look_at_xyz": view["look_at_xyz"],
+        "head_offset_xyz": [0.0, 0.0, 1.55],
+        "move_frames": int(args.move_frames),
+        "settle_frames": int(args.settle_frames),
+        "created_timestamp": time.time(),
+    }
+
+    save_json_atomic(VIEW_COMMAND_JSON, command)
+    print(f"[VIEW COMMAND] {command_id} {view['view_id']}")
+    return command
+
+
+def wait_view_result(command_id, timeout_sec):
+    print(f"[WAIT VIEW RESULT] {command_id}")
+    result = wait_json_field(VIEW_RESULT_JSON, "command_id", command_id, timeout_sec)
+    print(f"[VIEW RESULT] status={result.get('status')}")
+    return result
+
+
+def bbox_area_ratio(det, image_width=480, image_height=320):
+    bbox = det.get("bbox_xyxy")
+    if bbox is None or len(bbox) != 4:
+        return 0.0
+
+    x1, y1, x2, y2 = [float(v) for v in bbox]
+    area = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+    return area / max(1.0, float(image_width * image_height))
+
+
+def evaluate_detections(yolo_result, min_conf, min_area_ratio, blocked_raw):
+    image_width = int(yolo_result.get("image_width", 480))
+    image_height = int(yolo_result.get("image_height", 320))
+
+    candidates = []
+
+    for det in yolo_result.get("detections", []):
+        raw = det.get("raw_class_name", det.get("class_name", "unknown"))
+        conf = float(det.get("confidence", 0.0))
+        target_bin = det.get("target_bin", "unknown")
+
+        if raw in blocked_raw:
+            continue
+        if conf < min_conf:
+            continue
+        if target_bin == "unknown":
+            continue
+
+        area_ratio = bbox_area_ratio(det, image_width, image_height)
+        if area_ratio < min_area_ratio:
+            continue
+
+        score = conf + min(area_ratio * 20.0, 1.0)
+
+        candidates.append({
+            "raw_class_name": raw,
+            "category": det.get("category", "unknown"),
+            "target_bin": target_bin,
+            "confidence": round(conf, 4),
+            "area_ratio": round(area_ratio, 6),
+            "score": round(score, 4),
+            "bbox_xyxy": det.get("bbox_xyxy"),
+            "centroid_px": det.get("centroid_px"),
+        })
+
+    candidates.sort(key=lambda x: x["score"], reverse=True)
+
+    return {
+        "num_detections": len(yolo_result.get("detections", [])),
+        "num_candidates": len(candidates),
+        "best": candidates[0] if candidates else None,
+        "candidates": candidates,
+    }
+
+
+def count_detections(yolo_result):
+    out = {
+        "total": 0,
+        "by_raw_class": {},
+        "by_category": {},
+    }
+
+    for det in yolo_result.get("detections", []):
+        raw = det.get("raw_class_name", det.get("class_name", "unknown"))
+        category = det.get("category", "unknown")
+
+        out["total"] += 1
+        out["by_raw_class"][raw] = out["by_raw_class"].get(raw, 0) + 1
+        out["by_category"][category] = out["by_category"].get(category, 0) + 1
+
+    return out
+
+
+def make_plan(args, blocked_raw, selected_view, cycle_id):
+    blocked_arg = ",".join(sorted(blocked_raw))
+
+    cmd = (
+        "python3 ~/trashbot_ws/scripts/v2_make_visual_task_plan.py "
+        "--select confidence "
+        f"--profile {args.profile} "
+        f"--min-conf {args.conf}"
+    )
+
+    if blocked_arg:
+        cmd += f" --blocked-raw {blocked_arg}"
+    else:
+        # Explicitly override planner's default blocked list.
+        cmd += " --blocked-raw ''"
+
+    run_bash(cmd, timeout_sec=30)
+
+    plan = load_json(PLAN_JSON)
+
+    if plan.get("selected_task") is not None:
+        plan["cycle_id"] = cycle_id
+        plan["mode"] = "V2_7_HEAD_CAMERA_ALL_TRASH_FAST_PLAN"
+        plan["v26_selected_view"] = selected_view
+        save_json_atomic(PLAN_JSON, plan)
+
+    return plan
+
+
+def wait_action_result(plan_id, timeout_sec):
+    print(f"[WAIT ACTION RESULT] {plan_id}")
+    result = wait_json_field(ACTION_RESULT_JSON, "plan_id", plan_id, timeout_sec)
+    print(f"[ACTION RESULT] status={result.get('status')}")
+    return result
+
+
+def verify_action(before_yolo, action_result, after_yolo):
+    raw = action_result.get("raw_class_name", "unknown")
+    category = action_result.get("garbage_category", "unknown")
+
+    before = count_detections(before_yolo)
+    after = count_detections(after_yolo)
+
+    vote_total = after["total"] < before["total"]
+    vote_raw = after["by_raw_class"].get(raw, 0) < before["by_raw_class"].get(raw, 0)
+    vote_category = after["by_category"].get(category, 0) < before["by_category"].get(category, 0)
+
+    vote_score = int(vote_total) + int(vote_raw) + int(vote_category)
+
+    return {
+        "verified": vote_score >= 2,
+        "vote_score": vote_score,
+        "selected_raw_class": raw,
+        "selected_category": category,
+        "before_total": before["total"],
+        "after_total": after["total"],
+        "before_raw_class_count": before["by_raw_class"].get(raw, 0),
+        "after_raw_class_count": after["by_raw_class"].get(raw, 0),
+        "before_category_count": before["by_category"].get(category, 0),
+        "after_category_count": after["by_category"].get(category, 0),
+        "vote_total_decreased": vote_total,
+        "vote_raw_class_decreased": vote_raw,
+        "vote_category_decreased": vote_category,
+    }
+
+
+def find_valid_view(args, blocked_raw):
+    view_records = []
+
+    for idx, view in enumerate(VIEW_CANDIDATES[:args.max_views_per_cycle], start=1):
+        print("\n" + "-" * 80)
+        print(f"[VIEW TRY] {idx}: {view['view_id']}")
+        print("-" * 80)
+
+        command = write_view_command(view, args)
+        view_result = wait_view_result(command["command_id"], args.view_timeout_sec)
+
+        if view_result.get("status") != "success":
+            view_records.append({
+                "view_index": idx,
+                "view": view,
+                "view_result": view_result,
+                "accepted": False,
+                "reason": "view_move_failed",
+            })
+            continue
+
+        image_path = collect_image(args.collect_timeout_sec)
+        yolo_result = run_yolo_fast(
+            image_path=image_path,
+            conf=args.conf,
+            args=args,
+            save_overlay=args.save_overlay,
+        )
+
+        detection_eval = evaluate_detections(
+            yolo_result=yolo_result,
+            min_conf=args.conf,
+            min_area_ratio=args.min_area_ratio,
+            blocked_raw=blocked_raw,
+        )
+
+        accepted = detection_eval["best"] is not None
+
+        record = {
+            "view_index": idx,
+            "view": view,
+            "view_result": view_result,
+            "image_path": str(image_path),
+            "yolo_inference_sec": yolo_result.get("inference_sec"),
+            "detection_eval": detection_eval,
+            "accepted": accepted,
+            "reason": "accepted" if accepted else "no_valid_detection",
+        }
+
+        view_records.append(record)
+
+        print("[DETECTION EVAL]")
+        print(json.dumps(detection_eval, ensure_ascii=False, indent=2))
+
+        if accepted:
+            return view, image_path, yolo_result, detection_eval, view_records
+
+    return None, None, None, None, view_records
+
+
+def compute_metrics(records):
+    if not records:
+        return {
+            "num_cycles": 0,
+            "action_success_rate": 0.0,
+            "verification_success_rate": 0.0,
+            "average_attach_distance_xy": 0.0,
+            "average_yolo_inference_sec": 0.0,
+        }
+
+    action_ok = sum(1 for r in records if r.get("action_result", {}).get("status") == "success")
+    verify_ok = sum(1 for r in records if r.get("verification", {}).get("verified"))
+
+    attach = [
+        float(r["action_result"]["attach_distance_xy"])
+        for r in records
+        if r.get("action_result", {}).get("attach_distance_xy") is not None
+    ]
+
+    yolo_secs = [
+        float(r.get("before_yolo_inference_sec", 0.0))
+        for r in records
+        if r.get("before_yolo_inference_sec") is not None
+    ]
+
+    return {
+        "num_cycles": len(records),
+        "action_success_rate": round(action_ok / len(records), 4),
+        "verification_success_rate": round(verify_ok / len(records), 4),
+        "average_attach_distance_xy": round(sum(attach) / len(attach), 4) if attach else 0.0,
+        "average_yolo_inference_sec": round(sum(yolo_secs) / len(yolo_secs), 4) if yolo_secs else 0.0,
+    }
+
+
+def save_logs(records, extra=None):
+    summary = {
+        "mode": "V2_7_HEAD_CAMERA_ALL_TRASH_FAST_LOOP",
+        "metrics": compute_metrics(records),
+        "records": records,
+    }
+
+    if extra:
+        summary.update(extra)
+
+    save_json_atomic(RUN_LOG_JSON, summary)
+
+    with open(RUN_LOG_CSV, "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=[
+            "cycle_id",
+            "plan_id",
+            "view_id",
+            "raw_class_name",
+            "category",
+            "target_bin",
+            "confidence",
+            "action_status",
+            "verified",
+            "vote_score",
+            "attach_distance_xy",
+            "before_yolo_inference_sec",
+            "after_yolo_inference_sec",
+            "cycle_sec",
+        ])
+        writer.writeheader()
+
+        for r in records:
+            task = r.get("selected_task", {})
+            action = r.get("action_result", {})
+            verify = r.get("verification", {})
+            view = r.get("selected_view", {})
+
+            writer.writerow({
+                "cycle_id": r.get("cycle_id"),
+                "plan_id": r.get("plan_id"),
+                "view_id": view.get("view_id"),
+                "raw_class_name": task.get("raw_class_name"),
+                "category": task.get("garbage_category", task.get("category")),
+                "target_bin": task.get("target_bin"),
+                "confidence": task.get("confidence"),
+                "action_status": action.get("status"),
+                "verified": verify.get("verified"),
+                "vote_score": verify.get("vote_score"),
+                "attach_distance_xy": action.get("attach_distance_xy"),
+                "before_yolo_inference_sec": r.get("before_yolo_inference_sec"),
+                "after_yolo_inference_sec": r.get("after_yolo_inference_sec"),
+                "cycle_sec": r.get("cycle_sec"),
+            })
+
+    print(f"[SAVED] {RUN_LOG_JSON}")
+    print(f"[SAVED] {RUN_LOG_CSV}")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--max-cycles", type=int, default=5)
+    parser.add_argument("--max-views-per-cycle", type=int, default=2)
+    parser.add_argument("--conf", type=float, default=0.50)
+    parser.add_argument("--min-area-ratio", type=float, default=0.002)
+    parser.add_argument("--collect-timeout-sec", type=int, default=2)
+    parser.add_argument("--view-timeout-sec", type=int, default=60)
+    parser.add_argument("--action-timeout-sec", type=int, default=150)
+    parser.add_argument("--profile", default="all", choices=["stable", "stable_plus_kitchen", "all"])
+    parser.add_argument("--blocked-raw", default="")
+    parser.add_argument("--model", default=str(ROOT / "models" / "best_seg.pt"))
+    parser.add_argument("--imgsz", type=int, default=480)
+    parser.add_argument("--max-det", type=int, default=20)
+    parser.add_argument("--max-area-ratio", type=float, default=0.60)
+    parser.add_argument("--yolo-device", default="auto")
+    parser.add_argument("--yolo-ready-timeout-sec", type=int, default=60)
+    parser.add_argument("--yolo-infer-timeout-sec", type=int, default=30)
+    parser.add_argument("--move-frames", type=int, default=45)
+    parser.add_argument("--settle-frames", type=int, default=15)
+    parser.add_argument("--save-overlay", action="store_true")
+    parser.add_argument("--stop-on-failure", action="store_true")
+    args = parser.parse_args()
+
+    blocked_raw = {x.strip() for x in args.blocked_raw.split(",") if x.strip()}
+
+    clean_ipc_files()
+
+    yolo_proc = None
+    records = []
+
+    try:
+        yolo_proc = start_yolo_worker(args)
+
+        print("=" * 80)
+        print("[START] V2.7 fast all-trash loop")
+        print("[INFO] Isaac must be running:")
+        print("  1) v26_active_view_search_isaac_server.py")
+        print("  2) v27_head_camera_action_server.py")
+        print("=" * 80)
+
+        for cycle_id in range(1, args.max_cycles + 1):
+            cycle_t0 = time.time()
+
+            print("\n" + "=" * 80)
+            print(f"[CYCLE {cycle_id}]")
+            print("=" * 80)
+
+            selected_view, image_path, before_yolo, detection_eval, view_records = find_valid_view(args, blocked_raw)
+
+            if selected_view is None:
+                print("[DONE] no valid target found.")
+                save_logs(records, {
+                    "stop_reason": "no_valid_target_found",
+                    "last_view_records": view_records,
+                })
+                break
+
+            plan = make_plan(args, blocked_raw, selected_view, cycle_id)
+
+            if plan.get("selected_task") is None:
+                print("[DONE] no selected task after plan filtering.")
+                save_logs(records, {
+                    "stop_reason": "no_selected_task_after_filtering",
+                    "last_view_records": view_records,
+                })
+                break
+
+            plan_id = plan["plan_id"]
+            selected_task = plan["selected_task"]
+
+            print("[SELECTED TASK]")
+            print(json.dumps(selected_task, ensure_ascii=False, indent=2))
+
+            action_result = wait_action_result(plan_id, args.action_timeout_sec)
+
+            action_ok = action_result.get("status") == "success"
+
+            if action_ok:
+                after_image = collect_image(args.collect_timeout_sec)
+                after_yolo = run_yolo_fast(
+                    image_path=after_image,
+                    conf=args.conf,
+                    args=args,
+                    save_overlay=args.save_overlay,
+                )
+
+                verification = verify_action(before_yolo, action_result, after_yolo)
+                after_image_str = str(after_image)
+                after_yolo_infer = after_yolo.get("inference_sec")
+
+            else:
+                # Action failed, so there is no meaningful before/after visual verification.
+                # Do not crash the whole loop. Record failure and continue.
+                verification = {
+                    "verified": False,
+                    "vote_score": 0,
+                    "reason": "action_failed_skip_after_verification",
+                    "action_status": action_result.get("status"),
+                    "selected_raw_class": action_result.get("raw_class_name"),
+                    "selected_category": action_result.get("garbage_category"),
+                }
+                after_image_str = None
+                after_yolo_infer = None
+
+                failed_raw = action_result.get("raw_class_name")
+                if failed_raw:
+                    blocked_raw.add(failed_raw)
+                    print(f"[DYNAMIC BLOCK] raw_class={failed_raw} because action failed: {action_result.get('status')}")
+
+            print("[VERIFY]")
+            print(json.dumps(verification, ensure_ascii=False, indent=2))
+
+            record = {
+                "cycle_id": cycle_id,
+                "plan_id": plan_id,
+                "selected_view": selected_view,
+                "view_search_records": view_records,
+                "selected_task": selected_task,
+                "before_image": str(image_path),
+                "after_image": after_image_str,
+                "before_yolo_inference_sec": before_yolo.get("inference_sec"),
+                "after_yolo_inference_sec": after_yolo_infer,
+                "action_result": action_result,
+                "verification": verification,
+                "cycle_sec": round(time.time() - cycle_t0, 4),
+            }
+
+            records.append(record)
+            save_logs(records)
+
+            action_ok = action_result.get("status") == "success"
+            verify_ok = verification.get("verified") is True
+
+            if args.stop_on_failure and (not action_ok or not verify_ok):
+                print("[STOP] failure detected.")
+                break
+
+        save_logs(records)
+        print("[DONE]")
+        print(json.dumps(compute_metrics(records), ensure_ascii=False, indent=2))
+
+    finally:
+        stop_yolo_worker(yolo_proc)
+
+
+if __name__ == "__main__":
+    main()

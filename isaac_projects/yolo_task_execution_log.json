@@ -1,0 +1,553 @@
+{
+  "source_image": "/home/robot/trashbot_ws/data/images/20260617_223939/frame_000001.png",
+  "source_model": "/home/robot/trashbot_ws/models/best_seg.pt",
+  "source_result": "/home/robot/trashbot_ws/data/logs/yolo_seg_offline_result.json",
+  "note": "Formal display uses garbage category only. Raw YOLO class is kept for debug tracing.",
+  "tasks": [
+    {
+      "task_id": "task_005",
+      "garbage_category": "hazardous",
+      "garbage_category_cn": "有害垃圾",
+      "target_bin": "bin_hazardous_red",
+      "target_bin_cn": "红色有害垃圾桶",
+      "confidence": 0.9558,
+      "centroid_px": [
+        404.54,
+        231.71
+      ],
+      "bbox_xyxy": [
+        363.76,
+        210.97,
+        448.93,
+        252.28
+      ],
+      "action_code": 2,
+      "raw_class_name": "drugbox",
+      "raw_object_id": "drugbox",
+      "planning_status": "planned",
+      "execution_status": "pending",
+      "execution_order": 1
+    },
+    {
+      "task_id": "task_010",
+      "garbage_category": "hazardous",
+      "garbage_category_cn": "有害垃圾",
+      "target_bin": "bin_hazardous_red",
+      "target_bin_cn": "红色有害垃圾桶",
+      "confidence": 0.7916,
+      "centroid_px": [
+        393.09,
+        180.31
+      ],
+      "bbox_xyxy": [
+        368.24,
+        163.76,
+        418.06,
+        198.1
+      ],
+      "action_code": 2,
+      "raw_class_name": "battery",
+      "raw_object_id": "battery",
+      "planning_status": "planned",
+      "execution_status": "pending",
+      "execution_order": 2
+    },
+    {
+      "task_id": "task_001",
+      "garbage_category": "kitchen",
+      "garbage_category_cn": "厨余垃圾",
+      "target_bin": "bin_kitchen_green",
+      "target_bin_cn": "绿色厨余垃圾桶",
+      "confidence": 0.97,
+      "centroid_px": [
+        208.26,
+        191.22
+      ],
+      "bbox_xyxy": [
+        187.03,
+        167.65,
+        230.71,
+        215.98
+      ],
+      "action_code": 3,
+      "raw_class_name": "potato",
+      "raw_object_id": "potato",
+      "planning_status": "planned",
+      "execution_status": "pending",
+      "execution_order": 3
+    },
+    {
+      "task_id": "task_008",
+      "garbage_category": "kitchen",
+      "garbage_category_cn": "厨余垃圾",
+      "target_bin": "bin_kitchen_green",
+      "target_bin_cn": "绿色厨余垃圾桶",
+      "confidence": 0.8891,
+      "centroid_px": [
+        295.78,
+        196.92
+      ],
+      "bbox_xyxy": [
+        285.98,
+        164.85,
+        306.4,
+        232.19
+      ],
+      "action_code": 3,
+      "raw_class_name": "potatocut",
+      "raw_object_id": "potatocut",
+      "planning_status": "planned",
+      "execution_status": "pending",
+      "execution_order": 4
+    },
+    {
+      "task_id": "task_003",
+      "garbage_category": "recyclable",
+      "garbage_category_cn": "可回收垃圾",
+      "target_bin": "bin_recyclable_blue",
+      "target_bin_cn": "蓝色可回收垃圾桶",
+      "confidence": 0.964,
+      "centroid_px": [
+        265.82,
+        65.86
+      ],
+      "bbox_xyxy": [
+        238.46,
+        25.93,
+        295.34,
+        105.63
+      ],
+      "action_code": 1,
+      "raw_class_name": "paper",
+      "raw_object_id": "paper",
+      "planning_status": "planned",
+      "execution_status": "pending",
+      "execution_order": 5
+    },
+    {
+      "task_id": "task_004",
+      "garbage_category": "recyclable",
+      "garbage_category_cn": "可回收垃圾",
+      "target_bin": "bin_recyclable_blue",
+      "target_bin_cn": "蓝色可回收垃圾桶",
+      "confidence": 0.9635,
+      "centroid_px": [
+        405.98,
+        72.01
+      ],
+      "bbox_xyxy": [
+        386.27,
+        41.31,
+        428.22,
+        105.37
+      ],
+      "action_code": 1,
+      "raw_class_name": "can",
+      "raw_object_id": "can",
+      "planning_status": "planned",
+      "execution_status": "pending",
+      "execution_order": 6
+    },
+    {
+      "task_id": "task_006",
+      "garbage_category": "recyclable",
+      "garbage_category_cn": "可回收垃圾",
+      "target_bin": "bin_recyclable_blue",
+      "target_bin_cn": "蓝色可回收垃圾桶",
+      "confidence": 0.9509,
+      "centroid_px": [
+        313.61,
+        262.95
+      ],
+      "bbox_xyxy": [
+        288.26,
+        237.25,
+        340.37,
+        286.97
+      ],
+      "action_code": 1,
+      "raw_class_name": "paper",
+      "raw_object_id": "paper",
+      "planning_status": "planned",
+      "execution_status": "pending",
+      "execution_order": 7
+    },
+    {
+      "task_id": "task_007",
+      "garbage_category": "recyclable",
+      "garbage_category_cn": "可回收垃圾",
+      "target_bin": "bin_recyclable_blue",
+      "target_bin_cn": "蓝色可回收垃圾桶",
+      "confidence": 0.9358,
+      "centroid_px": [
+        229.38,
+        121.91
+      ],
+      "bbox_xyxy": [
+        185.77,
+        99.28,
+        280.49,
+        144.07
+      ],
+      "action_code": 1,
+      "raw_class_name": "bottle",
+      "raw_object_id": "bottle",
+      "planning_status": "planned",
+      "execution_status": "pending",
+      "execution_order": 8
+    },
+    {
+      "task_id": "task_009",
+      "garbage_category": "recyclable",
+      "garbage_category_cn": "可回收垃圾",
+      "target_bin": "bin_recyclable_blue",
+      "target_bin_cn": "蓝色可回收垃圾桶",
+      "confidence": 0.8364,
+      "centroid_px": [
+        325.25,
+        105.06
+      ],
+      "bbox_xyxy": [
+        282.02,
+        81.13,
+        377.42,
+        131.85
+      ],
+      "action_code": 1,
+      "raw_class_name": "bottle",
+      "raw_object_id": "bottle",
+      "planning_status": "planned",
+      "execution_status": "pending",
+      "execution_order": 9
+    },
+    {
+      "task_id": "task_002",
+      "garbage_category": "other",
+      "garbage_category_cn": "其他垃圾",
+      "target_bin": "bin_other_gray",
+      "target_bin_cn": "灰色其他垃圾桶",
+      "confidence": 0.9652,
+      "centroid_px": [
+        216.77,
+        261.57
+      ],
+      "bbox_xyxy": [
+        186.11,
+        231.29,
+        249.33,
+        293.82
+      ],
+      "action_code": 4,
+      "raw_class_name": "papercup",
+      "raw_object_id": "papercup",
+      "planning_status": "planned",
+      "execution_status": "pending",
+      "execution_order": 10
+    }
+  ],
+  "execution_log": [
+    {
+      "task_id": "task_005",
+      "execution_order": 1,
+      "garbage_category": "hazardous",
+      "garbage_category_cn": "有害垃圾",
+      "target_bin": "bin_hazardous_red",
+      "target_bin_cn": "红色有害垃圾桶",
+      "confidence": 0.9558,
+      "centroid_px": [
+        404.54,
+        231.71
+      ],
+      "action_code": 2,
+      "raw_class_name": "drugbox",
+      "raw_object_id": "drugbox",
+      "planning_status": "planned",
+      "execution_status": "success",
+      "grasp_success": true,
+      "placement_success": true,
+      "target_bin_correct": true,
+      "end_to_end_success": true,
+      "approach_time_sec": 1.2,
+      "grasp_time_sec": 0.8,
+      "transport_time_sec": 2.0,
+      "release_time_sec": 0.6,
+      "duration_sec": 4.6,
+      "start_timestamp": 1781718124.971
+    },
+    {
+      "task_id": "task_010",
+      "execution_order": 2,
+      "garbage_category": "hazardous",
+      "garbage_category_cn": "有害垃圾",
+      "target_bin": "bin_hazardous_red",
+      "target_bin_cn": "红色有害垃圾桶",
+      "confidence": 0.7916,
+      "centroid_px": [
+        393.09,
+        180.31
+      ],
+      "action_code": 2,
+      "raw_class_name": "battery",
+      "raw_object_id": "battery",
+      "planning_status": "planned",
+      "execution_status": "success",
+      "grasp_success": true,
+      "placement_success": true,
+      "target_bin_correct": true,
+      "end_to_end_success": true,
+      "approach_time_sec": 1.2,
+      "grasp_time_sec": 0.8,
+      "transport_time_sec": 2.0,
+      "release_time_sec": 0.6,
+      "duration_sec": 4.6,
+      "start_timestamp": 1781718124.971
+    },
+    {
+      "task_id": "task_001",
+      "execution_order": 3,
+      "garbage_category": "kitchen",
+      "garbage_category_cn": "厨余垃圾",
+      "target_bin": "bin_kitchen_green",
+      "target_bin_cn": "绿色厨余垃圾桶",
+      "confidence": 0.97,
+      "centroid_px": [
+        208.26,
+        191.22
+      ],
+      "action_code": 3,
+      "raw_class_name": "potato",
+      "raw_object_id": "potato",
+      "planning_status": "planned",
+      "execution_status": "success",
+      "grasp_success": true,
+      "placement_success": true,
+      "target_bin_correct": true,
+      "end_to_end_success": true,
+      "approach_time_sec": 1.2,
+      "grasp_time_sec": 0.8,
+      "transport_time_sec": 2.0,
+      "release_time_sec": 0.6,
+      "duration_sec": 4.6,
+      "start_timestamp": 1781718124.971
+    },
+    {
+      "task_id": "task_008",
+      "execution_order": 4,
+      "garbage_category": "kitchen",
+      "garbage_category_cn": "厨余垃圾",
+      "target_bin": "bin_kitchen_green",
+      "target_bin_cn": "绿色厨余垃圾桶",
+      "confidence": 0.8891,
+      "centroid_px": [
+        295.78,
+        196.92
+      ],
+      "action_code": 3,
+      "raw_class_name": "potatocut",
+      "raw_object_id": "potatocut",
+      "planning_status": "planned",
+      "execution_status": "success",
+      "grasp_success": true,
+      "placement_success": true,
+      "target_bin_correct": true,
+      "end_to_end_success": true,
+      "approach_time_sec": 1.2,
+      "grasp_time_sec": 0.8,
+      "transport_time_sec": 2.0,
+      "release_time_sec": 0.6,
+      "duration_sec": 4.6,
+      "start_timestamp": 1781718124.971
+    },
+    {
+      "task_id": "task_003",
+      "execution_order": 5,
+      "garbage_category": "recyclable",
+      "garbage_category_cn": "可回收垃圾",
+      "target_bin": "bin_recyclable_blue",
+      "target_bin_cn": "蓝色可回收垃圾桶",
+      "confidence": 0.964,
+      "centroid_px": [
+        265.82,
+        65.86
+      ],
+      "action_code": 1,
+      "raw_class_name": "paper",
+      "raw_object_id": "paper",
+      "planning_status": "planned",
+      "execution_status": "success",
+      "grasp_success": true,
+      "placement_success": true,
+      "target_bin_correct": true,
+      "end_to_end_success": true,
+      "approach_time_sec": 1.2,
+      "grasp_time_sec": 0.8,
+      "transport_time_sec": 2.0,
+      "release_time_sec": 0.6,
+      "duration_sec": 4.6,
+      "start_timestamp": 1781718124.971
+    },
+    {
+      "task_id": "task_004",
+      "execution_order": 6,
+      "garbage_category": "recyclable",
+      "garbage_category_cn": "可回收垃圾",
+      "target_bin": "bin_recyclable_blue",
+      "target_bin_cn": "蓝色可回收垃圾桶",
+      "confidence": 0.9635,
+      "centroid_px": [
+        405.98,
+        72.01
+      ],
+      "action_code": 1,
+      "raw_class_name": "can",
+      "raw_object_id": "can",
+      "planning_status": "planned",
+      "execution_status": "success",
+      "grasp_success": true,
+      "placement_success": true,
+      "target_bin_correct": true,
+      "end_to_end_success": true,
+      "approach_time_sec": 1.2,
+      "grasp_time_sec": 0.8,
+      "transport_time_sec": 2.0,
+      "release_time_sec": 0.6,
+      "duration_sec": 4.6,
+      "start_timestamp": 1781718124.971
+    },
+    {
+      "task_id": "task_006",
+      "execution_order": 7,
+      "garbage_category": "recyclable",
+      "garbage_category_cn": "可回收垃圾",
+      "target_bin": "bin_recyclable_blue",
+      "target_bin_cn": "蓝色可回收垃圾桶",
+      "confidence": 0.9509,
+      "centroid_px": [
+        313.61,
+        262.95
+      ],
+      "action_code": 1,
+      "raw_class_name": "paper",
+      "raw_object_id": "paper",
+      "planning_status": "planned",
+      "execution_status": "success",
+      "grasp_success": true,
+      "placement_success": true,
+      "target_bin_correct": true,
+      "end_to_end_success": true,
+      "approach_time_sec": 1.2,
+      "grasp_time_sec": 0.8,
+      "transport_time_sec": 2.0,
+      "release_time_sec": 0.6,
+      "duration_sec": 4.6,
+      "start_timestamp": 1781718124.971
+    },
+    {
+      "task_id": "task_007",
+      "execution_order": 8,
+      "garbage_category": "recyclable",
+      "garbage_category_cn": "可回收垃圾",
+      "target_bin": "bin_recyclable_blue",
+      "target_bin_cn": "蓝色可回收垃圾桶",
+      "confidence": 0.9358,
+      "centroid_px": [
+        229.38,
+        121.91
+      ],
+      "action_code": 1,
+      "raw_class_name": "bottle",
+      "raw_object_id": "bottle",
+      "planning_status": "planned",
+      "execution_status": "success",
+      "grasp_success": true,
+      "placement_success": true,
+      "target_bin_correct": true,
+      "end_to_end_success": true,
+      "approach_time_sec": 1.2,
+      "grasp_time_sec": 0.8,
+      "transport_time_sec": 2.0,
+      "release_time_sec": 0.6,
+      "duration_sec": 4.6,
+      "start_timestamp": 1781718124.971
+    },
+    {
+      "task_id": "task_009",
+      "execution_order": 9,
+      "garbage_category": "recyclable",
+      "garbage_category_cn": "可回收垃圾",
+      "target_bin": "bin_recyclable_blue",
+      "target_bin_cn": "蓝色可回收垃圾桶",
+      "confidence": 0.8364,
+      "centroid_px": [
+        325.25,
+        105.06
+      ],
+      "action_code": 1,
+      "raw_class_name": "bottle",
+      "raw_object_id": "bottle",
+      "planning_status": "planned",
+      "execution_status": "success",
+      "grasp_success": true,
+      "placement_success": true,
+      "target_bin_correct": true,
+      "end_to_end_success": true,
+      "approach_time_sec": 1.2,
+      "grasp_time_sec": 0.8,
+      "transport_time_sec": 2.0,
+      "release_time_sec": 0.6,
+      "duration_sec": 4.6,
+      "start_timestamp": 1781718124.971
+    },
+    {
+      "task_id": "task_002",
+      "execution_order": 10,
+      "garbage_category": "other",
+      "garbage_category_cn": "其他垃圾",
+      "target_bin": "bin_other_gray",
+      "target_bin_cn": "灰色其他垃圾桶",
+      "confidence": 0.9652,
+      "centroid_px": [
+        216.77,
+        261.57
+      ],
+      "action_code": 4,
+      "raw_class_name": "papercup",
+      "raw_object_id": "papercup",
+      "planning_status": "planned",
+      "execution_status": "success",
+      "grasp_success": true,
+      "placement_success": true,
+      "target_bin_correct": true,
+      "end_to_end_success": true,
+      "approach_time_sec": 1.2,
+      "grasp_time_sec": 0.8,
+      "transport_time_sec": 2.0,
+      "release_time_sec": 0.6,
+      "duration_sec": 4.6,
+      "start_timestamp": 1781718124.971
+    }
+  ],
+  "metrics": {
+    "num_tasks": 10,
+    "num_planned_tasks": 10,
+    "valid_planning_rate": 1.0,
+    "grasp_success_rate": 1.0,
+    "placement_success_rate": 1.0,
+    "target_bin_accuracy": 1.0,
+    "end_to_end_success_rate": 1.0,
+    "average_confidence": 0.9222,
+    "average_duration_sec": 4.6,
+    "category_count": {
+      "hazardous": 2,
+      "kitchen": 2,
+      "recyclable": 5,
+      "other": 1
+    },
+    "target_bin_count": {
+      "bin_hazardous_red": 2,
+      "bin_kitchen_green": 2,
+      "bin_recyclable_blue": 5,
+      "bin_other_gray": 1
+    }
+  }
+}

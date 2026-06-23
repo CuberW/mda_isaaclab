@@ -1,0 +1,2571 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+yolo11_qwen_perception_offline.py  v2
+======================================
+YOLO11-seg + Qwen3-VL-Flash 融合感知脚本。
+
+支持三种 pipeline：
+  --pipeline yolo_first   (原有逻辑，保留为 fallback)
+  --pipeline qwen_first   (新默认：Qwen 粗定位 -> YOLO ROI 精分割 -> Qwen 二次验证)
+  --pipeline hybrid       (alias for qwen_first，预留扩展)
+
+输出：~/trashbot_ws/data/logs/yolo_seg_offline_result.json
+可视化：~/trashbot_ws/data/logs/yolo11_qwen_overlay_latest.jpg
+
+版本历史：
+  v1  - yolo_first only
+  v2  - +qwen_first pipeline (2026-06-22)
+"""
+
+import argparse
+import base64
+import json
+import os
+import threading
+
+QWEN_RAW_LOG_LOCK = threading.Lock()
+
+# ---------------------------------------------------------------------------
+# Auto-load .env from ~/trashbot_ws/.env (no external package required)
+# Supports both  KEY=value  and  export KEY=value  formats.
+# Already-set env vars are NOT overwritten (shell export takes priority).
+# ---------------------------------------------------------------------------
+def _load_dotenv_simple() -> None:
+    from pathlib import Path
+    _env_path = Path.home() / "trashbot_ws" / ".env"
+    if not _env_path.exists():
+        return
+    for _line in _env_path.read_text(encoding="utf-8").splitlines():
+        _line = _line.strip()
+        if not _line or _line.startswith("#"):
+            continue
+        if _line.startswith("export "):
+            _line = _line[7:].strip()
+        if "=" not in _line:
+            continue
+        _k, _, _v = _line.partition("=")
+        _k = _k.strip()
+        _v = _v.strip()
+        if len(_v) >= 2 and ((_v[0] == _v[-1] == "'") or (_v[0] == _v[-1] == '"')):
+            _v = _v[1:-1]
+        if _k and _k not in os.environ:
+            os.environ[_k] = _v
+
+_load_dotenv_simple()
+
+import re
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+import cv2
+import numpy as np
+import requests
+from ultralytics import YOLO
+
+# Global requests session for HTTP Keep-Alive connection pooling
+QWEN_HTTP_SESSION = requests.Session()
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+ROOT = Path.home() / "trashbot_ws"
+DEFAULT_OUTPUT_JSON = ROOT / "data" / "logs" / "yolo_seg_offline_result.json"
+DEFAULT_OVERLAY = ROOT / "data" / "logs" / "yolo11_qwen_overlay_latest.jpg"
+
+# ---------------------------------------------------------------------------
+# Category / Bin Mappings
+# ---------------------------------------------------------------------------
+CATEGORY_COLOR = {
+    "recyclable": (255, 80, 80),
+    "kitchen":    (80, 220, 80),
+    "hazardous":  (80, 80, 255),
+    "other":      (180, 80, 255),
+    "unknown":    (160, 160, 160),
+}
+
+CATEGORY_CN = {
+    "recyclable": "\u53ef\u56de\u6536\u5783\u573e",
+    "kitchen":    "\u53a8\u4f59\u5783\u573e",
+    "hazardous":  "\u6709\u5bb3\u5783\u573e",
+    "other":      "\u5176\u4ed6\u5783\u573e",
+    "unknown":    "\u672a\u77e5",
+}
+
+BIN_CN = {
+    "bin_recyclable_blue": "\u84dd\u8272\u53ef\u56de\u6536\u5783\u573e\u6876",
+    "bin_kitchen_green":   "\u7eff\u8272\u53a8\u4f59\u5783\u573e\u6876",
+    "bin_hazardous_red":   "\u7ea2\u8272\u6709\u5bb3\u5783\u573e\u6876",
+    "bin_other_gray":      "\u7070\u8272\u5176\u4ed6\u5783\u573e\u6876",
+    "unknown":             "unknown",
+}
+
+CATEGORY_TO_BIN = {
+    "recyclable": "bin_recyclable_blue",
+    "kitchen":    "bin_kitchen_green",
+    "hazardous":  "bin_hazardous_red",
+    "other":      "bin_other_gray",
+    "unknown":    "unknown",
+}
+
+ALLOWED_CATEGORIES = {"recyclable", "kitchen", "hazardous", "other", "unknown"}
+ALLOWED_BINS = {"bin_recyclable_blue", "bin_kitchen_green",
+                "bin_hazardous_red", "bin_other_gray", "unknown"}
+
+RAW_CLASS_MOCK_MAP = {
+    "battery":   ("hazardous", "bin_hazardous_red"),
+    "battery1":  ("hazardous", "bin_hazardous_red"),
+    "battery5":  ("hazardous", "bin_hazardous_red"),
+    "drugbox":   ("hazardous", "bin_hazardous_red"),
+    "drug":      ("hazardous", "bin_hazardous_red"),
+    "drugbag":   ("hazardous", "bin_hazardous_red"),
+    "capsule":   ("hazardous", "bin_hazardous_red"),
+    "can":       ("recyclable", "bin_recyclable_blue"),
+    "bottle":    ("recyclable", "bin_recyclable_blue"),
+    "bottle2":   ("recyclable", "bin_recyclable_blue"),
+    "paper":     ("recyclable", "bin_recyclable_blue"),
+    "papercup":  ("other",      "bin_other_gray"),
+    "potato":    ("kitchen",    "bin_kitchen_green"),
+    "potatocut": ("kitchen",    "bin_kitchen_green"),
+    "rabbitcut": ("kitchen",    "bin_kitchen_green"),
+    "mooli":     ("kitchen",    "bin_kitchen_green"),
+}
+
+# ---------------------------------------------------------------------------
+# Global mock mode flag
+# ---------------------------------------------------------------------------
+QWEN_MOCK_MODE = False
+
+# ---------------------------------------------------------------------------
+# Qwen raw response log path
+# ---------------------------------------------------------------------------
+DEFAULT_QWEN_RAW_LOG = ROOT / "data" / "logs" / "qwen_raw_response_latest.txt"
+
+
+def _append_qwen_raw_log(section_tag: str, raw_text: str) -> None:
+    """Append a section to the Qwen raw response log (no API keys)."""
+    try:
+        DEFAULT_QWEN_RAW_LOG.parent.mkdir(parents=True, exist_ok=True)
+        ts = __import__("datetime").datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        with QWEN_RAW_LOG_LOCK:
+            with open(DEFAULT_QWEN_RAW_LOG, "a", encoding="utf-8") as f:
+                f.write(f"\n{'='*60}\n")
+                f.write(f"[{section_tag}]  {ts}\n")
+                f.write(f"{'='*60}\n")
+                f.write(raw_text)
+                f.write("\n")
+    except Exception as e:
+        print(f"[QWEN RAW LOG ERROR] {repr(e)}")
+
+
+
+# ---------------------------------------------------------------------------
+# Utility helpers
+# ---------------------------------------------------------------------------
+
+def postprocess_detections_dedup(detections: list, rejected_detections: list) -> list:
+    """
+    Deduplicate detections based on final YOLO segmentation bboxes and centroids.
+    Rejected duplicates are added to rejected_detections.
+    Returns the list of kept detections.
+    """
+    if not detections:
+        return []
+
+    # Sort detections by priority (best first)
+    def sort_key(d):
+        app_req = 1 if d.get("approach_required", True) else 0
+        conf = d.get("confidence", 0.0)
+        yolo_conf = d.get("yolo_confidence", 0.0)
+        area_ratio = d.get("bbox_area_ratio", 0.0)
+        try:
+            det_num = int(d["object_id"].split("_")[-1])
+        except Exception:
+            det_num = 999
+        return (app_req, -conf, -yolo_conf, -area_ratio, det_num)
+
+    sorted_dets = sorted(detections, key=sort_key)
+    kept_detections = []
+
+    for d in sorted_dets:
+        # Check duplicate against already kept detections
+        is_dup = False
+        dup_target = None
+        best_iou = 0.0
+        best_dist = None
+
+        for k in kept_detections:
+            # bbox IoU
+            iou = bbox_iou(d["bbox_xyxy"], k["bbox_xyxy"])
+            # centroid distance
+            c1 = d["centroid_px"]
+            c2 = k["centroid_px"]
+            dist = ((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2) ** 0.5
+            # bottom contact distance
+            b1 = d["bottom_contact_px"]
+            b2 = k["bottom_contact_px"]
+            b_dist = ((b1[0] - b2[0])**2 + (b1[1] - b2[1])**2) ** 0.5
+
+            cond1 = iou >= 0.45
+            cond2 = dist <= 20.0
+            cond3 = b_dist <= 25.0 and iou >= 0.20
+
+            if cond1 or cond2 or cond3:
+                is_dup = True
+                dup_target = k
+                best_iou = iou
+                best_dist = dist
+                break
+
+        if is_dup:
+            # Append to rejected_detections
+            rejected_detections.append({
+                "candidate_id":          d["raw_object_id"],
+                "object_id":             d["object_id"],
+                "raw_class_name":        d["raw_class_name"],
+                "bbox_xyxy":             d["bbox_xyxy"],
+                "qwen_bbox_xyxy":        d["qwen_bbox_xyxy"],
+                "reason":                "duplicate_after_yolo_refine",
+                "reject_reason":         "duplicate_after_yolo_refine",
+                "duplicate_of":          dup_target["object_id"],
+                "duplicate_iou":         round(best_iou, 4),
+                "duplicate_center_dist": round(best_dist, 2) if best_dist is not None else None,
+                "original_detection":    d
+            })
+            # Add raw_object_id to kept detection's merger list
+            if d["raw_object_id"] not in dup_target["merged_from_candidates"]:
+                dup_target["merged_from_candidates"].append(d["raw_object_id"])
+        else:
+            d["merged_from_candidates"] = [d["raw_object_id"]]
+            kept_detections.append(d)
+
+    # Re-sort kept detections by object_id suffix to preserve clean sequence
+    def id_key(d):
+        try:
+            return int(d["object_id"].split("_")[-1])
+        except Exception:
+            return 999
+    return sorted(kept_detections, key=id_key)
+
+
+def save_summary_text(path: Path, data: dict) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lines = []
+        lines.append(f"image: {data['image']}")
+        lines.append(f"num_qwen_candidates: {data['num_qwen_candidates']}")
+        lines.append(f"num_detections_before_dedup: {data['num_detections_before_dedup']}")
+        lines.append(f"num_detections_after_dedup: {data['num_detections_after_dedup']}")
+        lines.append(f"num_approach_candidates: {data.get('num_approach_candidates', 0)}")
+        lines.append(f"num_rejected: {data['num_rejected']}")
+        lines.append(f"planner_ready: {'true' if data.get('planner_ready', False) else 'false'}")
+        lines.append(f"verify_mode: {data.get('verify_mode', 'none')}")
+        lines.append(f"num_qwen_verify_calls: {data.get('num_qwen_verify_calls', 0)}")
+        lines.append(f"num_qwen_verify_skipped: {data.get('num_qwen_verify_skipped', 0)}")
+        lines.append(f"qwen_verify_workers: {data.get('qwen_verify_workers', 1)}")
+        lines.append(f"qwen_verify_parallel: {'true' if data.get('qwen_verify_parallel', False) else 'false'}")
+        lines.append(f"qwen_coarse_sec: {data.get('qwen_coarse_sec', 0.0):.4f}")
+        lines.append(f"yolo_roi_total_sec: {data.get('yolo_roi_total_sec', 0.0):.4f}")
+        lines.append(f"qwen_verify_total_sec: {data.get('qwen_verify_total_sec', 0.0):.4f}")
+        lines.append(f"total_sec: {data.get('total_sec', 0.0):.4f}")
+        lines.append(f"yolo_roi_calls: {data.get('yolo_roi_calls', 0)}")
+        lines.append("")
+        lines.append("detections:")
+        for d in data["detections"]:
+            merged = ",".join(d.get("merged_from_candidates", []))
+            lines.append(
+                f"* {d['object_id']}, {d['raw_object_id']}, [{merged}], "
+                f"{d.get('verify_object_name')}, {d['garbage_category']}, {d['target_bin']}, "
+                f"{d['confidence']}, {d['bbox_xyxy']}, {d['approach_required']}"
+            )
+        lines.append("")
+        lines.append("approach_candidates:")
+        for a in data.get("approach_candidates", []):
+            lines.append(
+                f"* {a['object_id']}, {a['raw_object_id']}, {a.get('verify_object_name')}, "
+                f"{a['garbage_category']}, {a['target_bin']}, {a['confidence']}, "
+                f"{a.get('approach_reason', 'none')}, {a['bbox_xyxy']}"
+            )
+        lines.append("")
+        lines.append("rejected:")
+        for r in data["rejected_detections"]:
+            cid_or_oid = r.get("candidate_id", r.get("object_id", "unknown"))
+            reason = r.get("reason", "unknown")
+            dup_of = r.get("duplicate_of", "")
+            dup_str = f", duplicate_of: {dup_of}" if dup_of else ""
+            lines.append(f"* {cid_or_oid}, {reason}{dup_str}")
+
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+        print(f"[SAVED] Summary -> {path}")
+    except Exception as e:
+        print(f"[SUMMARY ERROR] Failed to save summary: {repr(e)}")
+
+
+def check_planner_ready(detections: list) -> bool:
+    if not detections:
+        return False
+    required_keys = [
+        "raw_class_name", "garbage_category", "target_bin",
+        "confidence", "bbox_xyxy", "centroid_px",
+        "bottom_contact_px", "bbox_area_ratio", "polygon"
+    ]
+    for det in detections:
+        if det.get("approach_required") is True:
+            return False
+        for k in required_keys:
+            if det.get(k) is None:
+                return False
+        bbox = det["bbox_xyxy"]
+        if not isinstance(bbox, list) or len(bbox) != 4:
+            return False
+        centroid = det["centroid_px"]
+        if not isinstance(centroid, list) or len(centroid) != 2:
+            return False
+        b_contact = det["bottom_contact_px"]
+        if not isinstance(b_contact, list) or len(b_contact) != 2:
+            return False
+        poly = det["polygon"]
+        if not isinstance(poly, list) or len(poly) < 3:
+            return False
+        try:
+            conf = float(det["confidence"])
+            if conf <= 0.0:
+                return False
+        except Exception:
+            return False
+        if det["target_bin"] == "unknown":
+            return False
+        if det["garbage_category"] == "unknown":
+            return False
+    return True
+
+
+def save_json_atomic(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    for i in range(50):
+        try:
+            tmp.replace(path)
+            return
+        except (PermissionError, OSError) as e:
+            if i == 49:
+                print(f"[ERROR] Failed to save {path} after 50 retries: {repr(e)}")
+                raise
+            time.sleep(0.02)
+
+
+def encode_image_base64(image_path: Path) -> str:
+    with open(image_path, "rb") as fh:
+        return base64.b64encode(fh.read()).decode("utf-8")
+
+
+def polygon_centroid(poly) -> list:
+    if poly is None or len(poly) < 3:
+        return None
+    pts = np.array(poly, dtype=np.float32)
+    m = cv2.moments(pts)
+    if abs(m["m00"]) < 1e-6:
+        return None
+    cx = float(m["m10"] / m["m00"])
+    cy = float(m["m01"] / m["m00"])
+    return [round(cx, 2), round(cy, 2)]
+
+
+def compute_bottom_contact(polygon: list, bbox_xyxy: list) -> list:
+    """Compute the bottom-contact pixel from mask polygon (original-image coords)."""
+    x1, y1, x2, y2 = bbox_xyxy
+    if not polygon or len(polygon) < 3:
+        return [round(float((x1 + x2) / 2.0), 3), round(float(y2), 3)]
+    pts = np.array(polygon, dtype=np.float32)
+    y_coords = pts[:, 1]
+    y_max = float(np.max(y_coords))
+    bbox_h = y2 - y1
+    threshold = y_max - 0.08 * bbox_h
+    bottom_pts = pts[y_coords >= threshold]
+    if len(bottom_pts) == 0:
+        return [round(float((x1 + x2) / 2.0), 3), round(float(y2), 3)]
+    bottom_x = float(np.mean(bottom_pts[:, 0]))
+    bottom_y = float(np.mean(bottom_pts[:, 1]))
+    return [round(bottom_x, 3), round(bottom_y, 3)]
+
+
+def clamp(v, lo, hi):
+    return max(lo, min(hi, v))
+
+
+# ---------------------------------------------------------------------------
+# ROI helpers
+# ---------------------------------------------------------------------------
+
+def expand_bbox_to_square(bbox_xyxy: list, img_w: int, img_h: int,
+                           expand_ratio: float = 2.0) -> list:
+    """
+    Expand Qwen bbox to a padded square ROI.
+    Returns [crop_x1, crop_y1, crop_x2, crop_y2] clamped to image bounds.
+    """
+    x1, y1, x2, y2 = bbox_xyxy
+    cx = (x1 + x2) / 2.0
+    cy = (y1 + y2) / 2.0
+    w = x2 - x1
+    h = y2 - y1
+    side = max(w, h) * expand_ratio / 2.0
+    crop_x1 = int(clamp(cx - side, 0, img_w - 1))
+    crop_y1 = int(clamp(cy - side, 0, img_h - 1))
+    crop_x2 = int(clamp(cx + side, 0, img_w - 1))
+    crop_y2 = int(clamp(cy + side, 0, img_h - 1))
+    if crop_x2 <= crop_x1:
+        crop_x2 = min(img_w - 1, crop_x1 + 1)
+    if crop_y2 <= crop_y1:
+        crop_y2 = min(img_h - 1, crop_y1 + 1)
+    return [crop_x1, crop_y1, crop_x2, crop_y2]
+
+
+def bbox_iou(a: list, b: list) -> float:
+    """Compute IoU between two [x1,y1,x2,y2] boxes."""
+    ix1 = max(a[0], b[0])
+    iy1 = max(a[1], b[1])
+    ix2 = min(a[2], b[2])
+    iy2 = min(a[3], b[3])
+    inter_w = max(0.0, ix2 - ix1)
+    inter_h = max(0.0, iy2 - iy1)
+    inter = inter_w * inter_h
+    if inter == 0:
+        return 0.0
+    area_a = max(0.0, (a[2] - a[0]) * (a[3] - a[1]))
+    area_b = max(0.0, (b[2] - b[0]) * (b[3] - b[1]))
+    union = area_a + area_b - inter
+    return inter / union if union > 0 else 0.0
+
+
+# ---------------------------------------------------------------------------
+# Approach-required judgement
+# ---------------------------------------------------------------------------
+
+def compute_approach_required(bbox_xyxy: list, qwen_coarse_conf: float,
+                               img_w: int, img_h: int):
+    """Return (approach_required: bool, reason: str)."""
+    x1, y1, x2, y2 = bbox_xyxy
+    bbox_h = y2 - y1
+    cx = (x1 + x2) / 2.0
+    img_cx = img_w / 2.0
+
+    if bbox_h / max(1, img_h) < 0.08:
+        return True, "target_too_small"
+    if qwen_coarse_conf < 0.55:
+        return True, "low_confidence"
+    if abs(cx - img_cx) > img_w * 0.25:
+        return True, "off_center"
+    return False, "none"
+
+
+# ---------------------------------------------------------------------------
+# Qwen API config
+# ---------------------------------------------------------------------------
+
+def _get_qwen_config():
+    """Return (api_key, base_url, model_name). Sets QWEN_MOCK_MODE if keys missing."""
+    global QWEN_MOCK_MODE
+    api_key    = os.environ.get("QWEN_API_KEY",  "").strip()
+    base_url   = os.environ.get("QWEN_BASE_URL", "").strip()
+    model_name = os.environ.get("QWEN_MODEL",    "").strip()
+    if not model_name:
+        model_name = "qwen3-vl-flash"
+    if not api_key or not base_url:
+        if not QWEN_MOCK_MODE:
+            print("[QWEN MOCK] missing QWEN_API_KEY or QWEN_BASE_URL")
+        QWEN_MOCK_MODE = True
+    else:
+        QWEN_MOCK_MODE = False
+    return api_key, base_url, model_name
+
+
+def _extract_json_from_text(text: str) -> str:
+    """Strip markdown fences and return the first JSON object found."""
+    cleaned = text.strip()
+    cleaned = re.sub(r"^```(?:json)?\s*\n?", "", cleaned)
+    cleaned = re.sub(r"\n?```\s*$", "", cleaned)
+    cleaned = cleaned.strip()
+    if not ((cleaned.startswith("{") and cleaned.endswith("}")) or
+            (cleaned.startswith("[") and cleaned.endswith("]"))):
+        m = re.search(r"(\{.*\}|\[.*\])", cleaned, re.DOTALL)
+        if m:
+            cleaned = m.group(1).strip()
+    return cleaned
+
+
+def _post_qwen(base_url: str, api_key: str, model_name: str,
+               prompt: str, image_path: Path, timeout: int = 45):
+    """POST to Qwen OpenAI-compatible endpoint, return raw text or None."""
+    try:
+        b64 = encode_image_base64(image_path)
+    except Exception as e:
+        print(f"[QWEN ERROR] Failed to encode image {image_path}: {repr(e)}")
+        return None
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    data = {
+        "model": model_name,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                ],
+            }
+        ],
+    }
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    t0 = time.time()
+    try:
+        global QWEN_HTTP_SESSION
+        resp = QWEN_HTTP_SESSION.post(url, headers=headers, json=data, timeout=timeout)
+        dur = time.time() - t0
+        if resp.status_code != 200:
+            print(f"[QWEN ERROR] HTTP {resp.status_code}: {resp.text[:300]}")
+            return None
+        content = resp.json()["choices"][0]["message"]["content"]
+        print(f"[QWEN] Response in {dur:.2f}s for {image_path.name}")
+        return content
+    except Exception as e:
+        print(f"[QWEN ERROR] Request failed: {repr(e)}")
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Qwen coarse locate  (qwen_first step-1)
+# ---------------------------------------------------------------------------
+
+def normalize_qwen_bbox_norm(candidate: dict, image_width: int, image_height: int) -> tuple:
+    """
+    Parse candidate coordinates with priority to bbox_norm_xyxy.
+    Returns (success: bool, reason: str, parsed_coords: dict, is_fallback: bool).
+    """
+    cid = candidate.get("candidate_id", "unknown")
+    bbox_norm = candidate.get("bbox_norm_xyxy")
+    is_fallback = False
+
+    if bbox_norm is not None:
+        if not isinstance(bbox_norm, list) or len(bbox_norm) != 4:
+            return False, "invalid_qwen_bbox_norm", {}, False
+        try:
+            x1_norm, y1_norm, x2_norm, y2_norm = [float(v) for v in bbox_norm]
+        except Exception:
+            return False, "invalid_qwen_bbox_norm", {}, False
+
+        x1_norm = clamp(x1_norm, 0.0, 1.0)
+        y1_norm = clamp(y1_norm, 0.0, 1.0)
+        x2_norm = clamp(x2_norm, 0.0, 1.0)
+        y2_norm = clamp(y2_norm, 0.0, 1.0)
+
+        if x2_norm <= x1_norm or y2_norm <= y1_norm:
+            # Try sorting once
+            x1_norm, x2_norm = sorted([x1_norm, x2_norm])
+            y1_norm, y2_norm = sorted([y1_norm, y2_norm])
+            if x2_norm <= x1_norm or y2_norm <= y1_norm:
+                return False, "invalid_qwen_bbox_norm", {}, False
+    else:
+        # Fallback to legacy bbox_xyxy
+        bbox_legacy = candidate.get("bbox_xyxy")
+        if bbox_legacy is None:
+            return False, "missing_bbox_fields", {}, False
+        if not isinstance(bbox_legacy, list) or len(bbox_legacy) != 4:
+            return False, "legacy_invalid_bbox_xyxy", {}, True
+        try:
+            bx1, by1, bx2, by2 = [float(v) for v in bbox_legacy]
+        except Exception:
+            return False, "legacy_invalid_bbox_xyxy", {}, True
+
+        is_fallback = True
+        scale_x = 1.0
+        scale_y = 1.0
+
+        if all(0.0 <= v <= 1.05 for v in [bx1, by1, bx2, by2]) and max(bx1, by1, bx2, by2) <= 1.05:
+            # Normalized 0~1
+            x1_norm, y1_norm, x2_norm, y2_norm = bx1, by1, bx2, by2
+        elif all(0.0 <= v <= 100.0 for v in [bx1, by1, bx2, by2]) and max(bx1, by1, bx2, by2) <= 100.0:
+            # Percentage 0~100
+            x1_norm = bx1 / 100.0
+            y1_norm = by1 / 100.0
+            x2_norm = bx2 / 100.0
+            y2_norm = by2 / 100.0
+        elif all(0.0 <= v <= 1000.0 for v in [bx1, by1, bx2, by2]) and (bx2 > image_width or by2 > image_height or max(bx1, by1, bx2, by2) > max(image_width, image_height) * 1.1):
+            # 0~1000 scale
+            scale_x = 1.0 / 1000.0
+            scale_y = 1.0 / 1000.0
+            x1_norm = bx1 * scale_x
+            y1_norm = by1 * scale_y
+            x2_norm = bx2 * scale_x
+            y2_norm = by2 * scale_y
+        else:
+            # Pixel coordinates
+            scale_x = 1.0 / image_width
+            scale_y = 1.0 / image_height
+            x1_norm = bx1 * scale_x
+            y1_norm = by1 * scale_y
+            x2_norm = bx2 * scale_x
+            y2_norm = by2 * scale_y
+
+        x1_norm = clamp(x1_norm, 0.0, 1.0)
+        y1_norm = clamp(y1_norm, 0.0, 1.0)
+        x2_norm = clamp(x2_norm, 0.0, 1.0)
+        y2_norm = clamp(y2_norm, 0.0, 1.0)
+
+        if x2_norm <= x1_norm or y2_norm <= y1_norm:
+            x1_norm, x2_norm = sorted([x1_norm, x2_norm])
+            y1_norm, y2_norm = sorted([y1_norm, y2_norm])
+            if x2_norm <= x1_norm or y2_norm <= y1_norm:
+                return False, "legacy_invalid_bbox_xyxy", {}, True
+
+    # 3. Convert normalized coordinates to original pixel coordinates
+    x1_px = round(x1_norm * image_width)
+    y1_px = round(y1_norm * image_height)
+    x2_px = round(x2_norm * image_width)
+    y2_px = round(y2_norm * image_height)
+
+    # 4. Clamp pixel coordinates to image bounds
+    x1_px = clamp(x1_px, 0, image_width - 1)
+    x2_px = clamp(x2_px, 0, image_width - 1)
+    y1_px = clamp(y1_px, 0, image_height - 1)
+    y2_px = clamp(y2_px, 0, image_height - 1)
+
+    # 5. Check bbox validity
+    w_px = x2_px - x1_px
+    h_px = y2_px - y1_px
+    area_ratio = (w_px * h_px) / float(image_width * image_height)
+
+    if w_px < 5:
+        return False, "width_too_small", {}, is_fallback
+    if h_px < 5:
+        return False, "height_too_small", {}, is_fallback
+    if area_ratio < 0.0001:
+        return False, "area_ratio_too_small", {}, is_fallback
+    if area_ratio > 0.9:
+        return False, "area_ratio_too_large", {}, is_fallback
+
+    # Parse center
+    center_norm = candidate.get("center_norm")
+    center_px_legacy = candidate.get("center_px")
+
+    parsed_center_norm = None
+    if isinstance(center_norm, list) and len(center_norm) == 2:
+        try:
+            cx_n = clamp(float(center_norm[0]), 0.0, 1.0)
+            cy_n = clamp(float(center_norm[1]), 0.0, 1.0)
+            parsed_center_norm = [cx_n, cy_n]
+        except Exception:
+            pass
+
+    if parsed_center_norm is None and isinstance(center_px_legacy, list) and len(center_px_legacy) == 2:
+        try:
+            cx_px = float(center_px_legacy[0])
+            cy_px = float(center_px_legacy[1])
+            if is_fallback and 'scale_x' in locals() and 'scale_y' in locals():
+                cx_n = clamp(cx_px * scale_x, 0.0, 1.0)
+                cy_n = clamp(cy_px * scale_y, 0.0, 1.0)
+            else:
+                cx_n = clamp(cx_px / image_width, 0.0, 1.0)
+                cy_n = clamp(cy_px / image_height, 0.0, 1.0)
+            parsed_center_norm = [cx_n, cy_n]
+        except Exception:
+            pass
+
+    if parsed_center_norm is None:
+        parsed_center_norm = [
+            (x1_norm + x2_norm) / 2.0,
+            (y1_norm + y2_norm) / 2.0
+        ]
+
+    u_px = clamp(round(parsed_center_norm[0] * image_width), 0, image_width - 1)
+    v_px = clamp(round(parsed_center_norm[1] * image_height), 0, image_height - 1)
+
+    result_dict = {
+        "bbox_norm_xyxy": [round(x1_norm, 5), round(y1_norm, 5), round(x2_norm, 5), round(y2_norm, 5)],
+        "center_norm":    [round(parsed_center_norm[0], 5), round(parsed_center_norm[1], 5)],
+        "bbox_xyxy":      [x1_px, y1_px, x2_px, y2_px],
+        "center_px":      [u_px, v_px]
+    }
+
+    return True, "success", result_dict, is_fallback
+
+
+def coarse_locate_trash_with_qwen(image_path: Path, img_w: int, img_h: int) -> list:
+    """
+    Send the full image to Qwen3-VL-Flash for coarse trash localization.
+    Returns list of candidate dicts (bbox in original-image coords).
+    Empty list on failure or mock mode.
+    """
+    api_key, base_url, model_name = _get_qwen_config()
+
+    if QWEN_MOCK_MODE:
+        return []
+
+    prompt = (
+        "你是机器人垃圾分类系统的视觉粗定位模块。\n"
+        "请在整张图中寻找“可被机器人抓取并投放的垃圾物体”。\n"
+        "只允许识别真正的垃圾或疑似垃圾。不要把以下对象识别为垃圾：\n"
+        "* 机器人机械臂\n* 机器人夹爪\n* 桌子\n* 地面\n* 墙面\n"
+        "* 阴影\n* 垃圾桶\n* 垃圾桶边缘\n* 传感器、支架、线缆\n"
+        "* 任何明显不是垃圾的背景物体\n\n"
+        "请输出归一化比例坐标，不要输出像素坐标。\n\n"
+        "请输出严格 JSON，不要输出解释性文字。\n\n"
+        "输出格式：\n"
+        "{\n"
+        '  "candidates": [\n'
+        "    {\n"
+        '      "candidate_id": "vlm_candidate_001",\n'
+        '      "object_name": "...",\n'
+        '      "is_graspable_trash": true,\n'
+        '      "garbage_category_guess": "recyclable|kitchen|hazardous|other|unknown",\n'
+        '      "bbox_norm_xyxy": [0.0, 0.0, 1.0, 1.0],\n'
+        '      "center_norm": [0.5, 0.5],\n'
+        '      "confidence": 0.0,\n'
+        '      "reason": "..."\n'
+        "    }\n"
+        "  ]\n"
+        "}\n\n"
+        "要求：\n"
+        "- bbox_norm_xyxy 是相对整张输入图的比例坐标。\n"
+        "- x1_norm、x2_norm 表示相对图像宽度的比例。\n"
+        "- y1_norm、y2_norm 表示相对图像高度的比例。\n"
+        "- 所有坐标必须在 0.0 到 1.0 之间。\n"
+        "- x1_norm < x2_norm。\n"
+        "- y1_norm < y2_norm。\n"
+        "- 不要输出像素坐标。\n"
+        "- 不要输出 640 坐标。\n"
+        "- 不要输出 1000 坐标。\n"
+        "- 不要输出百分比 0 到 100。\n"
+        "- 不要输出中心点宽高格式。\n"
+        "- 只输出严格 JSON。"
+    )
+
+    raw_text = _post_qwen(base_url, api_key, model_name, prompt, image_path)
+    if not raw_text:
+        return []
+
+    _append_qwen_raw_log("COARSE", raw_text)
+
+    try:
+        cleaned = _extract_json_from_text(raw_text)
+        parsed = json.loads(cleaned)
+    except Exception as e:
+        print(f"[QWEN COARSE PARSE ERROR] {repr(e)}\nRaw:\n{raw_text[:500]}")
+        return []
+
+    raw_candidates = parsed.get("candidates", [])
+    if not isinstance(raw_candidates, list):
+        return []
+
+    valid = []
+    for idx, c in enumerate(raw_candidates):
+        cid = c.get("candidate_id", f"vlm_candidate_{idx+1:03d}")
+        obj_name = c.get("object_name", "unknown_object")
+        is_graspable = c.get("is_graspable_trash", False)
+        if not isinstance(is_graspable, bool):
+            is_graspable = bool(is_graspable)
+        cat_guess = c.get("garbage_category_guess", "unknown").lower().strip()
+        if cat_guess not in ALLOWED_CATEGORIES:
+            cat_guess = "unknown"
+        conf = c.get("confidence", 0.0)
+        try:
+            conf = float(conf)
+        except Exception:
+            conf = 0.0
+        reason = c.get("reason", "")
+
+        success, err_reason, coords, is_fb = normalize_qwen_bbox_norm(c, img_w, img_h)
+        if not success:
+            raw_val = c.get("bbox_norm_xyxy") if c.get("bbox_norm_xyxy") is not None else c.get("bbox_xyxy")
+            print(f"[QWEN NORM BBOX] id={cid} raw={raw_val} valid=false reason={err_reason}")
+            continue
+
+        if is_fb:
+            print(f"[QWEN BBOX FALLBACK] using legacy bbox_xyxy field")
+            print(f"[QWEN BBOX FALLBACK] id={cid} raw_bbox_xyxy={c.get('bbox_xyxy')} px={coords['bbox_xyxy']} reason=legacy_bbox_xyxy")
+        else:
+            print(f"[QWEN NORM BBOX] id={cid} norm={coords['bbox_norm_xyxy']} px={coords['bbox_xyxy']} image={img_w}x{img_h} valid=true")
+
+        valid.append({
+            "candidate_id":           cid,
+            "object_name":            obj_name,
+            "is_graspable_trash":     is_graspable,
+            "garbage_category_guess": cat_guess,
+            "bbox_norm_xyxy":         coords["bbox_norm_xyxy"],
+            "center_norm":            coords["center_norm"],
+            "bbox_xyxy":              coords["bbox_xyxy"],
+            "center_px":              coords["center_px"],
+            "confidence":             conf,
+            "reason":                 reason,
+        })
+
+    print(f"[QWEN COARSE] {len(valid)}/{len(raw_candidates)} valid candidates")
+    return valid
+
+
+# ---------------------------------------------------------------------------
+# Qwen classify crop  (qwen_first step-3 + yolo_first)
+# ---------------------------------------------------------------------------
+
+def _mock_qwen_classify(raw_class: str) -> dict:
+    mapped = RAW_CLASS_MOCK_MAP.get(raw_class, ("unknown", "unknown"))
+    cat, target_bin = mapped
+    return {
+        "object_name":       raw_class,
+        "garbage_category":  cat,
+        "target_bin":        target_bin,
+        "confidence":        0.85,
+        "is_graspable_trash": True,
+        "reason":            "Mocked fallback mapping based on YOLO class name",
+    }
+
+
+def _parse_classify_response(text: str, raw_class: str) -> dict:
+    try:
+        cleaned = _extract_json_from_text(text)
+        parsed = json.loads(cleaned)
+    except Exception as e:
+        print(f"[QWEN CLASSIFY PARSE ERROR] {repr(e)}")
+        return _mock_qwen_classify(raw_class)
+
+    garbage_category = parsed.get("garbage_category", "unknown").lower().strip()
+    if garbage_category not in ALLOWED_CATEGORIES:
+        garbage_category = "unknown"
+    target_bin = parsed.get("target_bin", "unknown").strip()
+    if target_bin not in ALLOWED_BINS:
+        target_bin = CATEGORY_TO_BIN.get(garbage_category, "unknown")
+    if target_bin == "unknown" and garbage_category != "unknown":
+        target_bin = CATEGORY_TO_BIN.get(garbage_category, "unknown")
+
+    conf = parsed.get("confidence", 0.5)
+    try:
+        conf = float(conf)
+    except Exception:
+        conf = 0.0
+
+    is_graspable = parsed.get("is_graspable_trash", True)
+    if not isinstance(is_graspable, bool):
+        is_graspable = True
+
+    return {
+        "object_name":       parsed.get("object_name", raw_class),
+        "garbage_category":  garbage_category,
+        "target_bin":        target_bin,
+        "confidence":        conf,
+        "is_graspable_trash": is_graspable,
+        "reason":            parsed.get("reason", "Qwen classify parsed"),
+    }
+
+
+def classify_crop_with_qwen(crop_path: Path, raw_class: str = "trash_object",
+                             det_label: str = "", object_id: str = "",
+                             candidate_id: str = "", attempt: int = 1) -> dict:
+    """Send YOLO crop to Qwen for final category verification."""
+    api_key, base_url, model_name = _get_qwen_config()
+    if QWEN_MOCK_MODE:
+        return _mock_qwen_classify(raw_class)
+
+    prompt = (
+        "你是机器人垃圾分类系统的视觉分类模块。\n"
+        "请根据输入图片中的单个垃圾物体，判断它属于哪一类垃圾。\n"
+        "只允许输出严格 JSON，不要输出解释性文字。\n\n"
+        "垃圾类别只能从以下五类中选择：\n"
+        "1. recyclable：可回收垃圾\n"
+        "2. kitchen：厨余垃圾\n"
+        "3. hazardous：有害垃圾\n"
+        "4. other：其他垃圾\n"
+        "5. unknown：无法判断\n\n"
+        "target_bin 只能从以下五个值中选择：\n"
+        "* bin_recyclable_blue\n* bin_kitchen_green\n"
+        "* bin_hazardous_red\n* bin_other_gray\n* unknown\n\n"
+        "输出格式：\n"
+        "{\n"
+        "  \"object_name\": \"...\",\n"
+        "  \"garbage_category\": \"...\",\n"
+        "  \"target_bin\": \"...\",\n"
+        "  \"confidence\": 0.0,\n"
+        "  \"is_graspable_trash\": true,\n"
+        "  \"reason\": \"...\"\n"
+        "}\n\n"
+        "要求：\n"
+        "- 只看图中主体垃圾，不要判断背景。\n"
+        "- 如果看不清，garbage_category 输出 unknown。\n"
+        "- 如果不是垃圾，is_graspable_trash 输出 false。\n"
+        "- confidence 范围为 0 到 1。\n"
+        "- 只输出 JSON。"
+    )
+
+    raw_text = _post_qwen(base_url, api_key, model_name, prompt, crop_path)
+    tag_parts = []
+    if object_id:
+        tag_parts.append(f"object_id={object_id}")
+    if candidate_id:
+        tag_parts.append(f"candidate={candidate_id}")
+    tag_parts.append(f"attempt={attempt}")
+    tag = f"VERIFY {' '.join(tag_parts)}"
+
+    if not raw_text:
+        _append_qwen_raw_log(tag, "[MOCKED RESPONSE] Qwen API call failed.")
+        return _mock_qwen_classify(raw_class)
+
+    _append_qwen_raw_log(tag, raw_text)
+    return _parse_classify_response(raw_text, raw_class)
+
+
+# Legacy alias used in yolo_first
+def call_qwen_api(crop_path: Path, raw_class: str) -> dict:
+    return classify_crop_with_qwen(crop_path, raw_class)
+
+
+def mock_qwen_result(raw_class: str) -> dict:
+    return _mock_qwen_classify(raw_class)
+
+
+# ---------------------------------------------------------------------------
+# YOLO ROI refined segmentation  (qwen_first step-2)
+# ---------------------------------------------------------------------------
+
+def refine_trash_with_yolo_roi(image: np.ndarray,
+                                img_w: int, img_h: int,
+                                qwen_candidate: dict,
+                                model,
+                                roi_expand: float,
+                                conf_thresh: float,
+                                min_area_ratio: float,
+                                roi_save_dir: Path) -> dict:
+    """
+    Run YOLO11-seg on the ROI defined by Qwen candidate bbox.
+    All returned coords are in ORIGINAL image space.
+    """
+    qwen_bbox = qwen_candidate["bbox_xyxy"]
+    image_area = img_w * img_h
+
+    for attempt, expand in enumerate([roi_expand, 3.0], start=1):
+        crop_bbox = expand_bbox_to_square(qwen_bbox, img_w, img_h, expand)
+        cx1, cy1, cx2, cy2 = crop_bbox
+
+        roi_img = image[cy1:cy2, cx1:cx2]
+        if roi_img.size == 0:
+            continue
+        roi_w = cx2 - cx1
+        roi_h = cy2 - cy1
+
+        roi_save_dir.mkdir(parents=True, exist_ok=True)
+        cid = qwen_candidate.get("candidate_id", "roi")
+        roi_filename = f"{cid}_expand{expand:.1f}.jpg"
+        roi_path = roi_save_dir / roi_filename
+        cv2.imwrite(str(roi_path), roi_img)
+
+        results = model.predict(source=roi_img, conf=conf_thresh, verbose=False)
+        result = results[0]
+        boxes = result.boxes
+        masks = result.masks
+
+        if boxes is None or len(boxes) == 0:
+            print(f"[YOLO ROI] No detection (expand={expand:.1f}, attempt {attempt})")
+            if attempt == 1:
+                continue
+            return {"success": False, "reason": "no_yolo_detection_in_roi",
+                    "crop_bbox": crop_bbox, "crop_path": str(roi_path)}
+
+        names = result.names
+        qwen_cx = (qwen_bbox[0] + qwen_bbox[2]) / 2.0
+        qwen_cy = (qwen_bbox[1] + qwen_bbox[3]) / 2.0
+        qwen_roi_bbox = [
+            clamp(qwen_bbox[0] - cx1, 0, roi_w),
+            clamp(qwen_bbox[1] - cy1, 0, roi_h),
+            clamp(qwen_bbox[2] - cx1, 0, roi_w),
+            clamp(qwen_bbox[3] - cy1, 0, roi_h),
+        ]
+
+        best_idx = None
+        best_score = -1.0
+        max_dist = (img_w**2 + img_h**2) ** 0.5
+
+        for i, box in enumerate(boxes):
+            xyxy = box.xyxy[0].detach().cpu().numpy().astype(float).tolist()
+            bx1, by1, bx2, by2 = xyxy
+            bx1 = clamp(bx1, 0, roi_w)
+            bx2 = clamp(bx2, 0, roi_w)
+            by1 = clamp(by1, 0, roi_h)
+            by2 = clamp(by2, 0, roi_h)
+            if bx2 <= bx1 or by2 <= by1:
+                continue
+            area = (bx2 - bx1) * (by2 - by1)
+            if area / max(1, image_area) < min_area_ratio:
+                continue
+            det_cx = (bx1 + bx2) / 2.0 + cx1
+            det_cy = (by1 + by2) / 2.0 + cy1
+            dist = ((det_cx - qwen_cx)**2 + (det_cy - qwen_cy)**2) ** 0.5
+            iou = bbox_iou(qwen_roi_bbox, [bx1, by1, bx2, by2])
+            yolo_conf = float(box.conf[0].item())
+            norm_dist = dist / max(1.0, max_dist)
+            score = iou * 0.5 + yolo_conf * 0.3 + (1.0 - norm_dist) * 0.2
+            if score > best_score:
+                best_score = score
+                best_idx = i
+
+        if best_idx is None:
+            print(f"[YOLO ROI] All boxes below threshold (expand={expand:.1f})")
+            if attempt == 1:
+                continue
+            return {"success": False, "reason": "yolo_boxes_below_area_threshold",
+                    "crop_bbox": crop_bbox, "crop_path": str(roi_path)}
+
+        # Extract best detection
+        box = boxes[best_idx]
+        cls_id = int(box.cls[0].item())
+        raw_class_name = names[cls_id]
+        yolo_conf = float(box.conf[0].item())
+        xyxy = box.xyxy[0].detach().cpu().numpy().astype(float).tolist()
+        bx1, by1, bx2, by2 = xyxy
+        bx1 = clamp(bx1, 0, roi_w)
+        bx2 = clamp(bx2, 0, roi_w)
+        by1 = clamp(by1, 0, roi_h)
+        by2 = clamp(by2, 0, roi_h)
+
+        # Restore to original image coords
+        ox1 = bx1 + cx1
+        oy1 = by1 + cy1
+        ox2 = bx2 + cx1
+        oy2 = by2 + cy1
+        bbox_w = ox2 - ox1
+        bbox_h = oy2 - oy1
+        area_ratio = (bbox_w * bbox_h) / max(1, image_area)
+
+        polygon = []
+        centroid = None
+        if masks is not None and getattr(masks, "xy", None) is not None \
+                and best_idx < len(masks.xy):
+            poly_roi = masks.xy[best_idx]
+            for px, py in poly_roi:
+                polygon.append([round(float(px) + cx1, 3),
+                                 round(float(py) + cy1, 3)])
+            centroid = polygon_centroid(np.array(polygon, dtype=np.float32))
+
+        if centroid is None:
+            centroid = [round(float((ox1 + ox2) / 2.0), 3),
+                        round(float((oy1 + oy2) / 2.0), 3)]
+
+        bottom_contact_px = compute_bottom_contact(polygon, [ox1, oy1, ox2, oy2])
+
+        # Save final crop
+        pad_x = bbox_w * 0.15
+        pad_y = bbox_h * 0.15
+        fc_x1 = max(0, int(ox1 - pad_x))
+        fc_y1 = max(0, int(oy1 - pad_y))
+        fc_x2 = min(img_w, int(ox2 + pad_x))
+        fc_y2 = min(img_h, int(oy2 + pad_y))
+        final_crop_img = image[fc_y1:fc_y2, fc_x1:fc_x2]
+        final_crop_path = roi_save_dir / f"{cid}_final_crop.jpg"
+        cv2.imwrite(str(final_crop_path), final_crop_img)
+
+        return {
+            "success":           True,
+            "crop_bbox":         crop_bbox,
+            "crop_path":         str(roi_path),
+            "final_crop_path":   str(final_crop_path),
+            "raw_class_name":    raw_class_name,
+            "yolo_confidence":   round(yolo_conf, 4),
+            "bbox_xyxy":         [round(ox1, 3), round(oy1, 3),
+                                   round(ox2, 3), round(oy2, 3)],
+            "centroid_px":       centroid,
+            "bottom_contact_px": bottom_contact_px,
+            "bbox_area_ratio":   round(area_ratio, 6),
+            "polygon":           polygon,
+            "bbox_h":            bbox_h,
+        }
+
+    return {"success": False, "reason": "failed_yolo_refine"}
+
+
+# ---------------------------------------------------------------------------
+# Visualization
+# ---------------------------------------------------------------------------
+
+def draw_overlay_qwen_first(image_path: Path, detections: list,
+                             rejected: list, qwen_candidates: list,
+                             overlay_path: Path, approach_candidates: list = None,
+                             vis_mode: str = "planner") -> None:
+    img = cv2.imread(str(image_path))
+    if img is None:
+        return
+    img_h, img_w = img.shape[:2]
+    overlay = img.copy()
+
+    def get_suffix(s: str) -> str:
+        m = re.findall(r'\d+', s)
+        return m[-1] if m else "000"
+
+    if approach_candidates is None:
+        approach_candidates = []
+
+    if vis_mode == "debug":
+        # 1. Draw Qwen coarse bboxes (VLM_NORM)
+        for c in qwen_candidates:
+            bx = [int(round(v)) for v in c["bbox_xyxy"]]
+            cv2.rectangle(overlay, (bx[0], bx[1]), (bx[2], bx[3]), (0, 200, 255), 1)
+            
+            suffix = get_suffix(c["candidate_id"])
+            cat = c.get("garbage_category_guess", "unknown")
+            conf = c.get("confidence", 0.0)
+            label = f"VLM_NORM {suffix} {cat} {conf:.2f}"
+            
+            font, fscale, thick = cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1
+            (tw, th), bl = cv2.getTextSize(label, font, fscale, thick)
+            
+            ly = bx[1] - 5
+            if ly - th - 2 < 0:
+                ly = bx[3] + th + 5
+                
+            cv2.rectangle(overlay, (bx[0], ly - th - 2), (bx[0] + tw + 4, ly + bl), (0, 100, 128), -1)
+            cv2.putText(overlay, label, (bx[0] + 2, ly - 2), font, fscale, (255, 255, 255), thick, cv2.LINE_AA)
+
+        # 2. Draw Rejected Candidates (thin gray line, and reject count / short label)
+        for r in rejected:
+            bbox = r.get("bbox_xyxy") or r.get("roi_crop_bbox_xyxy") or r.get("qwen_bbox_xyxy")
+            if bbox:
+                bx = [int(round(v)) for v in bbox]
+                cv2.rectangle(overlay, (bx[0], bx[1]), (bx[2], bx[3]), (100, 100, 100), 1)
+                
+                reason = r.get("reject_reason", r.get("reason", "rejected"))
+                label = f"REJECT {reason}"
+                
+                font, fscale, thick = cv2.FONT_HERSHEY_SIMPLEX, 0.35, 1
+                (tw, th), bl = cv2.getTextSize(label, font, fscale, thick)
+                
+                ly = bx[1] - 5
+                if ly - th - 2 < 0:
+                    ly = bx[3] + th + 5
+                
+                cv2.rectangle(overlay, (bx[0], ly - th - 2), (bx[0] + tw + 4, ly + bl), (60, 60, 60), -1)
+                cv2.putText(overlay, label, (bx[0] + 2, ly - 2), font, fscale, (200, 200, 200), thick, cv2.LINE_AA)
+
+    # 3. Draw Mask Fill for detections
+    mask_dets = detections if vis_mode == "planner" else (detections + approach_candidates)
+    mask_layer = overlay.copy()
+    for det in mask_dets:
+        cat   = det.get("garbage_category", "unknown")
+        color = CATEGORY_COLOR.get(cat, CATEGORY_COLOR["unknown"])
+        poly  = det.get("polygon")
+        if poly and len(poly) >= 3:
+            pts = np.array(poly, dtype=np.int32).reshape((-1, 1, 2))
+            cv2.fillPoly(mask_layer, [pts], color)
+    overlay = cv2.addWeighted(mask_layer, 0.28, overlay, 0.72, 0)
+
+    # 4. Draw Kept Detections
+    target_dets = detections if vis_mode == "planner" else (detections + approach_candidates)
+    for det in target_dets:
+        cat   = det.get("garbage_category", "unknown")
+        color = CATEGORY_COLOR.get(cat, CATEGORY_COLOR["unknown"])
+        x1, y1, x2, y2 = [int(round(v)) for v in det["bbox_xyxy"]]
+
+        # ROI Crop Bbox
+        if vis_mode == "debug":
+            roi_bbox = det.get("roi_crop_bbox_xyxy")
+            if roi_bbox:
+                rx = [int(round(v)) for v in roi_bbox]
+                cv2.rectangle(overlay, (rx[0], rx[1]), (rx[2], rx[3]), (255, 200, 0), 1)
+                
+                suffix_roi = get_suffix(det["raw_object_id"])
+                label_roi = f"ROI {suffix_roi}"
+                font, fscale, thick = cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1
+                (tw, th), bl = cv2.getTextSize(label_roi, font, fscale, thick)
+                ly = rx[1] - 5
+                if ly - th - 2 < 0:
+                    ly = rx[3] + th + 5
+                cv2.rectangle(overlay, (rx[0], ly - th - 2), (rx[0] + tw + 4, ly + bl), (128, 100, 0), -1)
+                cv2.putText(overlay, label_roi, (rx[0] + 2, ly - 2), font, fscale, (255, 255, 255), thick, cv2.LINE_AA)
+
+        # YOLO Box
+        cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 2)
+        
+        # Polygon Boundaries
+        poly = det.get("polygon")
+        if poly and len(poly) >= 3:
+            pts = np.array(poly, dtype=np.int32).reshape((-1, 1, 2))
+            cv2.polylines(overlay, [pts], isClosed=True, color=color, thickness=2)
+
+        # Centroid & Bottom Contact Points
+        if vis_mode == "debug":
+            c_px = det.get("centroid_px")
+            if c_px:
+                cv2.circle(overlay, (int(c_px[0]), int(c_px[1])), 3, (255, 255, 0), -1)
+        b_px = det.get("bottom_contact_px")
+        if b_px:
+            cv2.circle(overlay, (int(b_px[0]), int(b_px[1])), 4, (0, 0, 255), -1)
+
+        # YOLO Label with Overlap Check
+        suffix = get_suffix(det["object_id"])
+        
+        if vis_mode == "planner":
+            conf = det.get("confidence", 0.0)
+            label = f"D{suffix} {cat} {conf:.2f}"
+        else:
+            has_overlap = False
+            for other in detections + approach_candidates:
+                if other["object_id"] != det["object_id"]:
+                    if bbox_iou(det["bbox_xyxy"], other["bbox_xyxy"]) > 0.0:
+                        has_overlap = True
+                        break
+            
+            if has_overlap:
+                conf = det.get("confidence", 0.0)
+                label = f"D{suffix} {cat} {conf:.2f}"
+            else:
+                yolo_conf = det.get("yolo_confidence", 0.0)
+                label = f"YOLO {suffix} {cat} {yolo_conf:.2f}"
+                
+            if det.get("coarse_verify_category_mismatch"):
+                label += " MISMATCH"
+
+        font, fscale, thick = cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
+        (tw, th), bl = cv2.getTextSize(label, font, fscale, thick)
+        
+        ly = y1 - 5
+        if ly - th - 2 < 0:
+            ly = y2 + th + 5
+            
+        cv2.rectangle(overlay, (x1, ly - th - 2), (x1 + tw + 4, ly + bl), color, -1)
+        cv2.putText(overlay, label, (x1 + 2, ly - 2), font, fscale, (255, 255, 255), thick, cv2.LINE_AA)
+
+    # 5. Draw summary info box
+    if vis_mode == "planner":
+        summary_lines = [
+            f"Planner detections: {len(detections)}",
+            f"Approach candidates: {len(approach_candidates)}",
+            f"Rejected: {len(rejected)}"
+        ]
+    else:
+        summary_lines = [
+            f"Candidates: {len(qwen_candidates)}",
+            f"Detections: {len(detections)}",
+            f"Approach:   {len(approach_candidates)}",
+            f"Rejected:   {len(rejected)}"
+        ]
+    sy = 20
+    for line in summary_lines:
+        font, fscale, thick = cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
+        (tw, th), bl = cv2.getTextSize(line, font, fscale, thick)
+        cv2.rectangle(overlay, (10, sy - th - 2), (10 + tw + 4, sy + bl), (0, 0, 0), -1)
+        cv2.putText(overlay, line, (12, sy - 2), font, fscale, (255, 255, 255), thick, cv2.LINE_AA)
+        sy += th + 10
+
+    overlay_path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(overlay_path), overlay)
+
+
+def draw_overlay_qwen(image_path: Path, detections: list,
+                      overlay_path: Path) -> None:
+    """Legacy overlay for yolo_first pipeline."""
+    img = cv2.imread(str(image_path))
+    if img is None:
+        return
+    overlay = img.copy()
+    mask_layer = img.copy()
+
+    for det in detections:
+        cat   = det.get("garbage_category", "unknown")
+        color = CATEGORY_COLOR.get(cat, CATEGORY_COLOR["unknown"])
+        poly  = det.get("polygon")
+        if poly and len(poly) >= 3:
+            pts = np.array(poly, dtype=np.int32).reshape((-1, 1, 2))
+            cv2.fillPoly(mask_layer, [pts], color)
+    overlay = cv2.addWeighted(mask_layer, 0.28, overlay, 0.72, 0)
+
+    for det in detections:
+        cat   = det.get("garbage_category", "unknown")
+        color = CATEGORY_COLOR.get(cat, CATEGORY_COLOR["unknown"])
+        x1, y1, x2, y2 = [int(round(v)) for v in det["bbox_xyxy"]]
+        cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 2)
+        poly = det.get("polygon")
+        if poly and len(poly) >= 3:
+            pts = np.array(poly, dtype=np.int32).reshape((-1, 1, 2))
+            cv2.polylines(overlay, [pts], isClosed=True, color=color, thickness=2)
+        label = f"{cat} ({det.get('raw_class_name','?')}) {det.get('confidence',0):.2f}"
+        font, fscale, thick = cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
+        (tw, th), bl = cv2.getTextSize(label, font, fscale, thick)
+        ly = y1 - 5 if y1 - 5 > 15 else y1 + 15
+        cv2.rectangle(overlay, (x1, ly-th-2), (x1+tw+4, ly+bl), color, -1)
+        cv2.putText(overlay, label, (x1+2, ly-2), font, fscale,
+                    (255, 255, 255), thick, cv2.LINE_AA)
+        c_px = det.get("centroid_px")
+        if c_px:
+            cv2.circle(overlay, (int(c_px[0]), int(c_px[1])), 3, (255, 255, 0), -1)
+        b_px = det.get("bottom_contact_px")
+        if b_px:
+            cv2.circle(overlay, (int(b_px[0]), int(b_px[1])), 4, (0, 0, 255), -1)
+
+    overlay_path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(overlay_path), overlay)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline: yolo_first  (original — kept intact as fallback)
+# ---------------------------------------------------------------------------
+
+def run_yolo_first(image_path: Path, model, args,
+                   img: np.ndarray, orig_w: int, orig_h: int,
+                   crop_dir: Path):
+    """
+    Original YOLO-first pipeline.
+    Returns (detections, rejected_detections, yolo_infer_sec).
+    """
+    image_area = orig_w * orig_h
+    t0 = time.time()
+    results = model.predict(source=str(image_path), conf=args.conf, verbose=False)
+    yolo_infer_sec = time.time() - t0
+
+    result = results[0]
+    names  = result.names
+    boxes  = result.boxes
+    masks  = result.masks
+
+    detections = []
+    rejected_detections = []
+
+    if boxes is None:
+        return detections, rejected_detections, yolo_infer_sec
+
+    for i, box in enumerate(boxes):
+        cls_id         = int(box.cls[0].item())
+        raw_class_name = names[cls_id]
+        yolo_conf      = float(box.conf[0].item())
+
+        xyxy = box.xyxy[0].detach().cpu().numpy().astype(float).tolist()
+        x1, y1, x2, y2 = xyxy
+        x1 = clamp(x1, 0, orig_w - 1)
+        x2 = clamp(x2, 0, orig_w - 1)
+        y1 = clamp(y1, 0, orig_h - 1)
+        y2 = clamp(y2, 0, orig_h - 1)
+        if x2 <= x1 or y2 <= y1:
+            continue
+
+        bbox_w = x2 - x1
+        bbox_h = y2 - y1
+        area_ratio = (bbox_w * bbox_h) / max(1.0, image_area)
+
+        if area_ratio > args.max_area_ratio:
+            print(f"[YOLO FIRST FILTER] area_ratio {area_ratio:.3f} > {args.max_area_ratio}")
+            rejected_detections.append({
+                "raw_class_name": raw_class_name,
+                "bbox_xyxy":      [x1, y1, x2, y2],
+                "reject_reason":  "area_ratio_too_large",
+            })
+            continue
+
+        polygon  = []
+        centroid = None
+        if masks is not None and getattr(masks, "xy", None) is not None \
+                and i < len(masks.xy):
+            poly_np = masks.xy[i]
+            for px, py in poly_np:
+                polygon.append([round(float(px), 3), round(float(py), 3)])
+            centroid = polygon_centroid(poly_np)
+
+        if centroid is None:
+            centroid = [round(float((x1+x2)/2.0), 3),
+                        round(float((y1+y2)/2.0), 3)]
+
+        bottom_contact_px = compute_bottom_contact(polygon, [x1, y1, x2, y2])
+
+        pad_x = bbox_w * 0.15
+        pad_y = bbox_h * 0.15
+        c_x1 = max(0, int(x1 - pad_x))
+        c_y1 = max(0, int(y1 - pad_y))
+        c_x2 = min(orig_w, int(x2 + pad_x))
+        c_y2 = min(orig_h, int(y2 + pad_y))
+        crop_img  = img[c_y1:c_y2, c_x1:c_x2]
+        det_id    = len(detections) + 1
+        crop_path = crop_dir / f"det_{det_id:03d}_crop.jpg"
+        cv2.imwrite(str(crop_path), crop_img)
+
+        qwen_res        = call_qwen_api(crop_path, raw_class_name)
+        garbage_category = qwen_res.get("garbage_category", "unknown")
+        target_bin       = qwen_res.get("target_bin", "unknown")
+        qwen_conf        = qwen_res.get("confidence", 0.5)
+
+        if qwen_conf <= 0.0:
+            combined_conf = round(yolo_conf * 0.8, 4)
+        else:
+            combined_conf = round(min(yolo_conf, qwen_conf), 4)
+
+        approach_required, approach_reason = compute_approach_required(
+            [x1, y1, x2, y2], qwen_conf, orig_w, orig_h)
+
+        det = {
+            "object_id":            f"yolo11_qwen_det_{det_id:03d}",
+            "raw_class_name":       raw_class_name,
+            "raw_object_id":        f"yolo_det_{det_id:03d}",
+            "class_name":           "trash_object",
+            "display_name":         "trash_object",
+            "category":             "trash_object",
+            "garbage_category":     garbage_category,
+            "garbage_category_cn":  CATEGORY_CN.get(garbage_category, "\u672a\u77e5"),
+            "target_bin":           target_bin,
+            "target_bin_cn":        BIN_CN.get(target_bin, "unknown"),
+            "confidence":           combined_conf,
+            "yolo_confidence":      round(yolo_conf, 4),
+            "qwen_confidence":      round(qwen_conf, 4),
+            "bbox_xyxy":            [round(x1,3), round(y1,3), round(x2,3), round(y2,3)],
+            "centroid_px":          centroid,
+            "bottom_contact_px":    bottom_contact_px,
+            "bbox_area_ratio":      round(area_ratio, 6),
+            "polygon":              polygon,
+            "crop_path":            str(crop_path),
+            "approach_required":    approach_required,
+            "approach_reason":      approach_reason,
+            "qwen_result":          qwen_res,
+            "qwen_verify_skipped":  False,
+            "source":               "yolo11_seg_qwen",
+        }
+        detections.append(det)
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def run_qwen_verify_batch(detections_to_verify: list, args) -> dict:
+    """
+    Run Qwen crop verification concurrently using ThreadPoolExecutor.
+    Returns a dict mapping object_id -> qwen_verify_result.
+    """
+    results_map = {}
+    if not detections_to_verify:
+        return results_map
+
+    max_workers = getattr(args, "qwen_verify_workers", 4)
+    if max_workers < 1:
+        max_workers = 1
+
+    # Thread execution target
+    def verify_single(det):
+        final_crop_path = Path(det["crop_path"])
+        raw_class_name = det["raw_class_name"]
+        obj_id = det["object_id"]
+        cid = det["raw_object_id"]
+        try:
+            res = classify_crop_with_qwen(
+                final_crop_path, raw_class_name,
+                object_id=obj_id, candidate_id=cid, attempt=1
+            )
+            # Control concurrency risk: retry once if API fails or returns unknown
+            if not res or res.get("garbage_category") == "unknown":
+                time.sleep(1.0)
+                res = classify_crop_with_qwen(
+                    final_crop_path, raw_class_name,
+                    object_id=obj_id, candidate_id=cid, attempt=2
+                )
+            return obj_id, res
+        except Exception as e:
+            fallback_res = {
+                "object_name": raw_class_name,
+                "garbage_category": "unknown",
+                "target_bin": "unknown",
+                "confidence": 0.0,
+                "is_graspable_trash": False,
+                "reason": f"qwen_verify_exception: {repr(e)}"
+            }
+            return obj_id, fallback_res
+
+    # Use ThreadPoolExecutor to run concurrently
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_det = {executor.submit(verify_single, det): det for det in detections_to_verify}
+        for future in as_completed(future_to_det):
+            det = future_to_det[future]
+            try:
+                obj_id, res = future.result()
+                results_map[obj_id] = res
+            except Exception as e:
+                obj_id = det["object_id"]
+                raw_class_name = det["raw_class_name"]
+                fallback_res = {
+                    "object_name": raw_class_name,
+                    "garbage_category": "unknown",
+                    "target_bin": "unknown",
+                    "confidence": 0.0,
+                    "is_graspable_trash": False,
+                    "reason": f"qwen_verify_exception: {repr(e)}"
+                }
+                results_map[obj_id] = fallback_res
+
+    return results_map
+
+
+# ---------------------------------------------------------------------------
+# Pipeline: qwen_first
+# ---------------------------------------------------------------------------
+
+def run_qwen_first(image_path: Path, model, args,
+                   img: np.ndarray, orig_w: int, orig_h: int,
+                   timestamp: str):
+    """
+    Qwen-first pipeline.
+    Returns (detections, rejected_detections, total_sec, qwen_candidates,
+             fallback_meta: dict).
+    fallback_meta keys: fallback_used (bool), fallback_reason (str),
+                        executed_pipeline (str).
+    """
+    t_start = time.time()
+    image_area = orig_w * orig_h
+
+    roi_dir = ROOT / "data" / "crops" / "qwen_roi" / timestamp
+    roi_dir.mkdir(parents=True, exist_ok=True)
+
+    provisional_detections = []
+    rejected_detections = []
+
+    # Step 1: Qwen coarse locate
+    t_coarse_start = time.time()
+    qwen_candidates = coarse_locate_trash_with_qwen(image_path, orig_w, orig_h)
+    qwen_coarse_sec = time.time() - t_coarse_start
+
+    # Sort candidates: key: (confidence, pixel_area) descending
+    def cand_sort_key(c):
+        x1, y1, x2, y2 = c["bbox_xyxy"]
+        area = (x2 - x1) * (y2 - y1)
+        return (c["confidence"], area)
+    qwen_candidates = sorted(qwen_candidates, key=cand_sort_key, reverse=True)
+
+    # Truncate candidates if max_qwen_candidates is specified
+    if args.max_qwen_candidates is not None and len(qwen_candidates) > args.max_qwen_candidates:
+        truncated_cands = qwen_candidates[args.max_qwen_candidates:]
+        for tc in truncated_cands:
+            rejected_detections.append({
+                "raw_class_name":  tc["object_name"],
+                "bbox_xyxy":       tc["bbox_xyxy"],
+                "qwen_bbox_xyxy":  tc["bbox_xyxy"],
+                "reject_reason":   "max_qwen_candidates_limit",
+                "candidate_id":    tc["candidate_id"],
+            })
+        qwen_candidates = qwen_candidates[:args.max_qwen_candidates]
+
+    if not qwen_candidates:
+        if QWEN_MOCK_MODE:
+            print("[QWEN MOCK] qwen_first requires API, fallback to yolo_first")
+            crop_dir = ROOT / "data" / "crops" / "qwen" / timestamp
+            crop_dir.mkdir(parents=True, exist_ok=True)
+            dets, rejects, yolo_sec = run_yolo_first(
+                image_path, model, args, img, orig_w, orig_h, crop_dir)
+            fb_meta = {"fallback_used": True,
+                       "fallback_reason": "missing_qwen_api",
+                       "executed_pipeline": "yolo_first"}
+            return dets, rejects, time.time() - t_start, [], fb_meta
+        else:
+            print("[QWEN FIRST] No candidates from Qwen")
+            fb_meta = {"fallback_used": False,
+                       "fallback_reason": "none",
+                       "executed_pipeline": "qwen_first"}
+            return [], [], time.time() - t_start, [], fb_meta
+
+    yolo_roi_total_sec = 0.0
+    yolo_roi_calls = 0
+    refined_count = 0
+
+    for candidate in qwen_candidates:
+        cid              = candidate["candidate_id"]
+        qwen_coarse_conf = candidate["confidence"]
+        is_graspable     = candidate["is_graspable_trash"]
+
+        if not is_graspable:
+            rejected_detections.append({
+                "raw_class_name":  candidate["object_name"],
+                "bbox_xyxy":       candidate["bbox_xyxy"],
+                "qwen_bbox_xyxy":  candidate["bbox_xyxy"],
+                "reject_reason":   "qwen_coarse_not_graspable",
+                "candidate_id":    cid,
+            })
+            continue
+
+        if qwen_coarse_conf < args.qwen_coarse_conf:
+            rejected_detections.append({
+                "raw_class_name":  candidate["object_name"],
+                "bbox_xyxy":       candidate["bbox_xyxy"],
+                "qwen_bbox_xyxy":  candidate["bbox_xyxy"],
+                "reject_reason":   f"qwen_coarse_conf_too_low({qwen_coarse_conf:.2f})",
+                "candidate_id":    cid,
+            })
+            continue
+
+        bx1, by1, bx2, by2 = candidate["bbox_xyxy"]
+        if bx2 <= bx1 or by2 <= by1:
+            rejected_detections.append({
+                "raw_class_name":  candidate["object_name"],
+                "bbox_xyxy":       candidate["bbox_xyxy"],
+                "reject_reason":   "invalid_qwen_bbox",
+                "candidate_id":    cid,
+            })
+            continue
+
+        # Check max_roi_refine limit
+        if args.max_roi_refine is not None and refined_count >= args.max_roi_refine:
+            rejected_detections.append({
+                "raw_class_name":  candidate["object_name"],
+                "bbox_xyxy":       candidate["bbox_xyxy"],
+                "qwen_bbox_xyxy":  candidate["bbox_xyxy"],
+                "reject_reason":   "max_roi_refine_limit",
+                "candidate_id":    cid,
+            })
+            continue
+
+        refined_count += 1
+
+        # Step 2: YOLO ROI refine
+        t_yolo_start = time.time()
+        yolo_result = refine_trash_with_yolo_roi(
+            image=img, img_w=orig_w, img_h=orig_h,
+            qwen_candidate=candidate,
+            model=model,
+            roi_expand=args.roi_expand,
+            conf_thresh=args.conf,
+            min_area_ratio=args.min_area_ratio,
+            roi_save_dir=roi_dir,
+        )
+        yolo_roi_total_sec += time.time() - t_yolo_start
+        yolo_roi_calls += 1
+
+        if not yolo_result["success"]:
+            rejected_detections.append({
+                "raw_class_name":     candidate["object_name"],
+                "bbox_xyxy":          candidate["bbox_xyxy"],
+                "qwen_bbox_xyxy":     candidate["bbox_xyxy"],
+                "roi_crop_bbox_xyxy": yolo_result.get("crop_bbox"),
+                "reject_reason":      yolo_result.get("reason", "failed_yolo_refine"),
+                "candidate_id":       cid,
+            })
+            continue
+
+        if yolo_result["bbox_area_ratio"] < args.min_area_ratio:
+            rejected_detections.append({
+                "raw_class_name":     yolo_result["raw_class_name"],
+                "bbox_xyxy":          yolo_result["bbox_xyxy"],
+                "qwen_bbox_xyxy":     candidate["bbox_xyxy"],
+                "roi_crop_bbox_xyxy": yolo_result.get("crop_bbox"),
+                "reject_reason":      f"yolo_area_too_small({yolo_result['bbox_area_ratio']:.6f})",
+                "candidate_id":       cid,
+            })
+            continue
+
+        if yolo_result["bbox_area_ratio"] > args.max_area_ratio:
+            rejected_detections.append({
+                "raw_class_name":     yolo_result["raw_class_name"],
+                "bbox_xyxy":          yolo_result["bbox_xyxy"],
+                "qwen_bbox_xyxy":     candidate["bbox_xyxy"],
+                "roi_crop_bbox_xyxy": yolo_result.get("crop_bbox"),
+                "reject_reason":      f"yolo_area_too_large({yolo_result['bbox_area_ratio']:.3f})",
+                "candidate_id":       cid,
+            })
+            continue
+
+        final_crop_path = Path(yolo_result.get("final_crop_path",
+                                               yolo_result["crop_path"]))
+        raw_class_name  = yolo_result["raw_class_name"]
+        
+        det_id = len(provisional_detections) + 1
+        obj_id = f"qwen_yolo_det_{det_id:03d}"
+
+        # Build provisional detection
+        garbage_category = candidate.get("garbage_category_guess", "unknown")
+        target_bin = CATEGORY_TO_BIN.get(garbage_category, "unknown")
+        yolo_conf = yolo_result["yolo_confidence"]
+        
+        combined_conf = round(min(
+            qwen_coarse_conf if qwen_coarse_conf > 0 else 0,
+            yolo_conf        if yolo_conf > 0        else 0,
+        ), 4)
+
+        approach_required, approach_reason = compute_approach_required(
+            yolo_result["bbox_xyxy"], qwen_coarse_conf, orig_w, orig_h)
+
+        coarse_obj_name = candidate.get("object_name", "unknown_object")
+        coarse_cat = candidate.get("garbage_category_guess", "unknown")
+
+        det = {
+            "object_id":           obj_id,
+            "raw_class_name":      raw_class_name,
+            "raw_object_id":       cid,
+            "class_name":          "trash_object",
+            "display_name":        "trash_object",
+            "category":            "trash_object",
+            "garbage_category":    garbage_category,
+            "garbage_category_cn": CATEGORY_CN.get(garbage_category, "未知"),
+            "target_bin":          target_bin,
+            "target_bin_cn":       BIN_CN.get(target_bin, "unknown"),
+            "confidence":              combined_conf,
+            "qwen_coarse_confidence":  round(qwen_coarse_conf, 4),
+            "yolo_confidence":         round(yolo_conf, 4),
+            "qwen_verify_confidence":  0.0,
+            "bbox_xyxy":           yolo_result["bbox_xyxy"],
+            "centroid_px":         yolo_result["centroid_px"],
+            "bottom_contact_px":   yolo_result["bottom_contact_px"],
+            "bbox_area_ratio":     yolo_result["bbox_area_ratio"],
+            "polygon":             yolo_result["polygon"],
+            "qwen_bbox_norm_xyxy": candidate["bbox_norm_xyxy"],
+            "qwen_center_norm":    candidate["center_norm"],
+            "qwen_bbox_xyxy":      candidate["bbox_xyxy"],
+            "qwen_center_px":      candidate["center_px"],
+            "roi_crop_bbox_xyxy":  yolo_result.get("crop_bbox"),
+            "roi_crop_path":       yolo_result["crop_path"],
+            "crop_path":           str(final_crop_path),
+            "approach_required":   approach_required,
+            "approach_reason":     approach_reason,
+            "qwen_coarse_result":  candidate,
+            "qwen_verify_result":  {
+                "object_name": coarse_obj_name,
+                "garbage_category": garbage_category,
+                "target_bin": target_bin,
+                "confidence": 0.0,
+                "is_graspable_trash": True,
+                "reason": "skipped_qwen_verify_by_verify_mode"
+            },
+            "qwen_verify_attempts": [],
+            "coarse_object_name": coarse_obj_name,
+            "verify_object_name": coarse_obj_name,
+            "coarse_garbage_category_guess": coarse_cat,
+            "verify_garbage_category": garbage_category,
+            "coarse_verify_mismatch": False,
+            "coarse_verify_mismatch_reason": "none",
+            "coarse_verify_category_mismatch": False,
+            "coarse_verify_name_mismatch":     False,
+            "qwen_verify_skipped":             True,
+            "source": {
+                "pipeline": "qwen_first_yolo11_roi",
+                "verify_mode": args.verify_mode,
+                "qwen_verify_skipped": True
+            },
+        }
+        provisional_detections.append(det)
+
+    num_qwen_verify_calls = 0
+    t_verify_start = time.time()
+
+    if args.verify_mode == "all":
+        if args.qwen_verify_workers > 1 and len(provisional_detections) > 1:
+            # Parallel verify
+            batch_results = run_qwen_verify_batch(provisional_detections, args)
+            num_qwen_verify_calls += len(provisional_detections)
+
+            verified_provisional = []
+            for det in provisional_detections:
+                obj_id = det["object_id"]
+                cid = det["raw_object_id"]
+                raw_class_name = det["raw_class_name"]
+                qwen_verify_res = batch_results.get(obj_id)
+                if not qwen_verify_res:
+                    qwen_verify_res = {
+                        "object_name": raw_class_name,
+                        "garbage_category": "unknown",
+                        "target_bin": "unknown",
+                        "confidence": 0.0,
+                        "is_graspable_trash": False,
+                        "reason": "qwen_verify_exception: no result returned"
+                    }
+
+                verify_is_graspable = qwen_verify_res.get("is_graspable_trash", True)
+                garbage_category    = qwen_verify_res.get("garbage_category", "unknown")
+                target_bin          = qwen_verify_res.get("target_bin", "unknown")
+                qwen_verify_conf    = qwen_verify_res.get("confidence", 0.0)
+
+                verify_attempts = [
+                    {
+                        "attempt": 1,
+                        "crop_path": det["crop_path"],
+                        "qwen_verify_result": qwen_verify_res
+                    }
+                ]
+
+                if not verify_is_graspable:
+                    rejected_detections.append({
+                        "raw_class_name":     raw_class_name,
+                        "bbox_xyxy":          det["bbox_xyxy"],
+                        "qwen_bbox_xyxy":     det["qwen_bbox_xyxy"],
+                        "roi_crop_bbox_xyxy": det.get("roi_crop_bbox_xyxy"),
+                        "reject_reason":      "qwen_verify_not_graspable",
+                        "reason":             "qwen_verify_not_graspable",
+                        "candidate_id":       cid,
+                        "qwen_verify_result": qwen_verify_res,
+                        "qwen_verify_attempts": verify_attempts,
+                    })
+                    continue
+
+                if garbage_category == "unknown" and not args.allow_unknown:
+                    rejected_detections.append({
+                        "raw_class_name":     raw_class_name,
+                        "bbox_xyxy":          det["bbox_xyxy"],
+                        "qwen_bbox_xyxy":     det["qwen_bbox_xyxy"],
+                        "roi_crop_bbox_xyxy": det.get("roi_crop_bbox_xyxy"),
+                        "reject_reason":      "garbage_category_unknown_not_allowed",
+                        "reason":             "garbage_category_unknown_not_allowed",
+                        "candidate_id":       cid,
+                        "qwen_verify_result": qwen_verify_res,
+                        "qwen_verify_attempts": verify_attempts,
+                    })
+                    continue
+
+                det["garbage_category"] = garbage_category
+                det["target_bin"] = target_bin
+                det["garbage_category_cn"] = CATEGORY_CN.get(garbage_category, "未知")
+                det["target_bin_cn"] = BIN_CN.get(target_bin, "unknown")
+                det["qwen_verify_confidence"] = round(qwen_verify_conf, 4)
+                det["qwen_verify_result"] = qwen_verify_res
+                det["qwen_verify_attempts"] = verify_attempts
+                det["verify_object_name"] = qwen_verify_res.get("object_name", "unknown_object")
+                det["verify_garbage_category"] = garbage_category
+                
+                qwen_coarse_conf = det["qwen_coarse_confidence"]
+                yolo_conf = det["yolo_confidence"]
+                det["confidence"] = round(min(
+                    qwen_coarse_conf if qwen_coarse_conf > 0 else 0,
+                    yolo_conf        if yolo_conf > 0        else 0,
+                    qwen_verify_conf if qwen_verify_conf > 0 else 0,
+                ), 4)
+
+                coarse_obj_name = det["coarse_object_name"]
+                verify_obj_name = det["verify_object_name"]
+                coarse_cat = det["coarse_garbage_category_guess"]
+                verify_cat = det["verify_garbage_category"]
+
+                coarse_verify_mismatch = False
+                mismatch_reason = "none"
+
+                if coarse_cat != verify_cat:
+                    coarse_verify_mismatch = True
+                    mismatch_reason = "category_mismatch"
+                elif coarse_obj_name.lower().strip() != verify_obj_name.lower().strip():
+                    coarse_verify_mismatch = True
+                    mismatch_reason = "object_name_mismatch"
+
+                det["coarse_verify_mismatch"] = coarse_verify_mismatch
+                det["coarse_verify_mismatch_reason"] = mismatch_reason
+                det["coarse_verify_category_mismatch"] = (
+                    coarse_cat != verify_cat or
+                    verify_cat == "unknown" or
+                    not verify_is_graspable
+                )
+                det["coarse_verify_name_mismatch"] = (coarse_obj_name.lower().strip() != verify_obj_name.lower().strip())
+                det["qwen_verify_skipped"] = False
+                det["source"]["qwen_verify_skipped"] = False
+
+                verified_provisional.append(det)
+
+            num_before = len(verified_provisional)
+            detections = postprocess_detections_dedup(verified_provisional, rejected_detections)
+        else:
+            # Serial verify
+            verified_provisional = []
+            for det in provisional_detections:
+                final_crop_path = Path(det["crop_path"])
+                raw_class_name = det["raw_class_name"]
+                obj_id = det["object_id"]
+                cid = det["raw_object_id"]
+
+                num_qwen_verify_calls += 1
+                qwen_verify_res = classify_crop_with_qwen(
+                    final_crop_path, raw_class_name,
+                    object_id=obj_id, candidate_id=cid, attempt=1
+                )
+                qwen_verify_conf    = qwen_verify_res.get("confidence", 0.0)
+                verify_is_graspable = qwen_verify_res.get("is_graspable_trash", True)
+                garbage_category    = qwen_verify_res.get("garbage_category", "unknown")
+                target_bin          = qwen_verify_res.get("target_bin", "unknown")
+
+                verify_attempts = [
+                    {
+                        "attempt": 1,
+                        "crop_path": str(final_crop_path),
+                        "qwen_verify_result": qwen_verify_res
+                    }
+                ]
+
+                if not verify_is_graspable:
+                    rejected_detections.append({
+                        "raw_class_name":     raw_class_name,
+                        "bbox_xyxy":          det["bbox_xyxy"],
+                        "qwen_bbox_xyxy":     det["qwen_bbox_xyxy"],
+                        "roi_crop_bbox_xyxy": det.get("roi_crop_bbox_xyxy"),
+                        "reject_reason":      "qwen_verify_not_graspable",
+                        "reason":             "qwen_verify_not_graspable",
+                        "candidate_id":       cid,
+                        "qwen_verify_result": qwen_verify_res,
+                        "qwen_verify_attempts": verify_attempts,
+                    })
+                    continue
+
+                if garbage_category == "unknown" and not args.allow_unknown:
+                    rejected_detections.append({
+                        "raw_class_name":     raw_class_name,
+                        "bbox_xyxy":          det["bbox_xyxy"],
+                        "qwen_bbox_xyxy":     det["qwen_bbox_xyxy"],
+                        "roi_crop_bbox_xyxy": det.get("roi_crop_bbox_xyxy"),
+                        "reject_reason":      "garbage_category_unknown_not_allowed",
+                        "reason":             "garbage_category_unknown_not_allowed",
+                        "candidate_id":       cid,
+                        "qwen_verify_result": qwen_verify_res,
+                        "qwen_verify_attempts": verify_attempts,
+                    })
+                    continue
+
+                det["garbage_category"] = garbage_category
+                det["target_bin"] = target_bin
+                det["garbage_category_cn"] = CATEGORY_CN.get(garbage_category, "未知")
+                det["target_bin_cn"] = BIN_CN.get(target_bin, "unknown")
+                det["qwen_verify_confidence"] = round(qwen_verify_conf, 4)
+                det["qwen_verify_result"] = qwen_verify_res
+                det["qwen_verify_attempts"] = verify_attempts
+                det["verify_object_name"] = qwen_verify_res.get("object_name", "unknown_object")
+                det["verify_garbage_category"] = garbage_category
+                
+                qwen_coarse_conf = det["qwen_coarse_confidence"]
+                yolo_conf = det["yolo_confidence"]
+                det["confidence"] = round(min(
+                    qwen_coarse_conf if qwen_coarse_conf > 0 else 0,
+                    yolo_conf        if yolo_conf > 0        else 0,
+                    qwen_verify_conf if qwen_verify_conf > 0 else 0,
+                ), 4)
+
+                coarse_obj_name = det["coarse_object_name"]
+                verify_obj_name = det["verify_object_name"]
+                coarse_cat = det["coarse_garbage_category_guess"]
+                verify_cat = det["verify_garbage_category"]
+
+                coarse_verify_mismatch = False
+                mismatch_reason = "none"
+
+                if coarse_cat != verify_cat:
+                    coarse_verify_mismatch = True
+                    mismatch_reason = "category_mismatch"
+                elif coarse_obj_name.lower().strip() != verify_obj_name.lower().strip():
+                    coarse_verify_mismatch = True
+                    mismatch_reason = "object_name_mismatch"
+
+                det["coarse_verify_mismatch"] = coarse_verify_mismatch
+                det["coarse_verify_mismatch_reason"] = mismatch_reason
+                det["coarse_verify_category_mismatch"] = (
+                    coarse_cat != verify_cat or
+                    verify_cat == "unknown" or
+                    not verify_is_graspable
+                )
+                det["coarse_verify_name_mismatch"] = (coarse_obj_name.lower().strip() != verify_obj_name.lower().strip())
+                det["qwen_verify_skipped"] = False
+                det["source"]["qwen_verify_skipped"] = False
+
+                verified_provisional.append(det)
+
+            num_before = len(verified_provisional)
+            detections = postprocess_detections_dedup(verified_provisional, rejected_detections)
+
+    else:
+        # Deduplication & splitting on provisional
+        num_before = len(provisional_detections)
+        deduped_detections = postprocess_detections_dedup(provisional_detections, rejected_detections)
+
+        # Split approach_candidates
+        detections = []
+        approach_candidates = []
+        for d in deduped_detections:
+            if d.get("approach_required", False) and not args.include_approach_in_detections:
+                d["not_sent_to_planner_reason"] = "approach_required"
+                approach_candidates.append(d)
+            else:
+                detections.append(d)
+
+        to_verify_list = []
+        if args.verify_mode == "planner_only":
+            to_verify_list = detections
+        elif args.verify_mode == "top1":
+            if detections:
+                to_verify_list = [detections[0]]
+
+        if args.verify_mode == "planner_only" and args.qwen_verify_workers > 1 and len(to_verify_list) > 1:
+            # Parallel verify
+            batch_results = run_qwen_verify_batch(to_verify_list, args)
+            num_qwen_verify_calls += len(to_verify_list)
+
+            final_detections = []
+            for det in detections:
+                if det in to_verify_list:
+                    obj_id = det["object_id"]
+                    cid = det["raw_object_id"]
+                    raw_class_name = det["raw_class_name"]
+                    qwen_verify_res = batch_results.get(obj_id)
+                    if not qwen_verify_res:
+                        qwen_verify_res = {
+                            "object_name": raw_class_name,
+                            "garbage_category": "unknown",
+                            "target_bin": "unknown",
+                            "confidence": 0.0,
+                            "is_graspable_trash": False,
+                            "reason": "qwen_verify_exception: no result returned"
+                        }
+                    
+                    verify_is_graspable = qwen_verify_res.get("is_graspable_trash", True)
+                    garbage_category    = qwen_verify_res.get("garbage_category", "unknown")
+                    target_bin          = qwen_verify_res.get("target_bin", "unknown")
+                    qwen_verify_conf    = qwen_verify_res.get("confidence", 0.0)
+
+                    verify_attempts = [
+                        {
+                            "attempt": 1,
+                            "crop_path": det["crop_path"],
+                            "qwen_verify_result": qwen_verify_res
+                        }
+                    ]
+
+                    if not verify_is_graspable:
+                        rejected_detections.append({
+                            "raw_class_name":     raw_class_name,
+                            "bbox_xyxy":          det["bbox_xyxy"],
+                            "qwen_bbox_xyxy":     det["qwen_bbox_xyxy"],
+                            "roi_crop_bbox_xyxy": det.get("roi_crop_bbox_xyxy"),
+                            "reject_reason":      "qwen_verify_not_graspable",
+                            "reason":             "qwen_verify_not_graspable",
+                            "candidate_id":       cid,
+                            "qwen_verify_result": qwen_verify_res,
+                            "qwen_verify_attempts": verify_attempts,
+                        })
+                        continue
+
+                    if garbage_category == "unknown" and not args.allow_unknown:
+                        rejected_detections.append({
+                            "raw_class_name":     raw_class_name,
+                            "bbox_xyxy":          det["bbox_xyxy"],
+                            "qwen_bbox_xyxy":     det["qwen_bbox_xyxy"],
+                            "roi_crop_bbox_xyxy": det.get("roi_crop_bbox_xyxy"),
+                            "reject_reason":      "garbage_category_unknown_not_allowed",
+                            "reason":             "garbage_category_unknown_not_allowed",
+                            "candidate_id":       cid,
+                            "qwen_verify_result": qwen_verify_res,
+                            "qwen_verify_attempts": verify_attempts,
+                        })
+                        continue
+
+                    det["garbage_category"] = garbage_category
+                    det["target_bin"] = target_bin
+                    det["garbage_category_cn"] = CATEGORY_CN.get(garbage_category, "未知")
+                    det["target_bin_cn"] = BIN_CN.get(target_bin, "unknown")
+                    det["qwen_verify_confidence"] = round(qwen_verify_conf, 4)
+                    det["qwen_verify_result"] = qwen_verify_res
+                    det["qwen_verify_attempts"] = verify_attempts
+                    det["verify_object_name"] = qwen_verify_res.get("object_name", "unknown_object")
+                    det["verify_garbage_category"] = garbage_category
+                    
+                    qwen_coarse_conf = det["qwen_coarse_confidence"]
+                    yolo_conf = det["yolo_confidence"]
+                    det["confidence"] = round(min(
+                        qwen_coarse_conf if qwen_coarse_conf > 0 else 0,
+                        yolo_conf        if yolo_conf > 0        else 0,
+                        qwen_verify_conf if qwen_verify_conf > 0 else 0,
+                    ), 4)
+
+                    coarse_obj_name = det["coarse_object_name"]
+                    verify_obj_name = det["verify_object_name"]
+                    coarse_cat = det["coarse_garbage_category_guess"]
+                    verify_cat = det["verify_garbage_category"]
+
+                    coarse_verify_mismatch = False
+                    mismatch_reason = "none"
+
+                    if coarse_cat != verify_cat:
+                        coarse_verify_mismatch = True
+                        mismatch_reason = "category_mismatch"
+                    elif coarse_obj_name.lower().strip() != verify_obj_name.lower().strip():
+                        coarse_verify_mismatch = True
+                        mismatch_reason = "object_name_mismatch"
+
+                    det["coarse_verify_mismatch"] = coarse_verify_mismatch
+                    det["coarse_verify_mismatch_reason"] = mismatch_reason
+                    det["coarse_verify_category_mismatch"] = (
+                        coarse_cat != verify_cat or
+                        verify_cat == "unknown" or
+                        not verify_is_graspable
+                    )
+                    det["coarse_verify_name_mismatch"] = (coarse_obj_name.lower().strip() != verify_obj_name.lower().strip())
+                    det["qwen_verify_skipped"] = False
+                    det["source"]["qwen_verify_skipped"] = False
+
+                    final_detections.append(det)
+                else:
+                    final_detections.append(det)
+
+            detections = final_detections + approach_candidates
+        else:
+            # Serial verify
+            final_detections = []
+            for det in detections:
+                if det in to_verify_list:
+                    final_crop_path = Path(det["crop_path"])
+                    raw_class_name = det["raw_class_name"]
+                    obj_id = det["object_id"]
+                    cid = det["raw_object_id"]
+
+                    num_qwen_verify_calls += 1
+                    qwen_verify_res = classify_crop_with_qwen(
+                        final_crop_path, raw_class_name,
+                        object_id=obj_id, candidate_id=cid, attempt=1
+                    )
+                    qwen_verify_conf    = qwen_verify_res.get("confidence", 0.0)
+                    verify_is_graspable = qwen_verify_res.get("is_graspable_trash", True)
+                    garbage_category    = qwen_verify_res.get("garbage_category", "unknown")
+                    target_bin          = qwen_verify_res.get("target_bin", "unknown")
+
+                    verify_attempts = [
+                        {
+                            "attempt": 1,
+                            "crop_path": str(final_crop_path),
+                            "qwen_verify_result": qwen_verify_res
+                        }
+                    ]
+
+                    if not verify_is_graspable:
+                        rejected_detections.append({
+                            "raw_class_name":     raw_class_name,
+                            "bbox_xyxy":          det["bbox_xyxy"],
+                            "qwen_bbox_xyxy":     det["qwen_bbox_xyxy"],
+                            "roi_crop_bbox_xyxy": det.get("roi_crop_bbox_xyxy"),
+                            "reject_reason":      "qwen_verify_not_graspable",
+                            "reason":             "qwen_verify_not_graspable",
+                            "candidate_id":       cid,
+                            "qwen_verify_result": qwen_verify_res,
+                            "qwen_verify_attempts": verify_attempts,
+                        })
+                        continue
+
+                    if garbage_category == "unknown" and not args.allow_unknown:
+                        rejected_detections.append({
+                            "raw_class_name":     raw_class_name,
+                            "bbox_xyxy":          det["bbox_xyxy"],
+                            "qwen_bbox_xyxy":     det["qwen_bbox_xyxy"],
+                            "roi_crop_bbox_xyxy": det.get("roi_crop_bbox_xyxy"),
+                            "reject_reason":      "garbage_category_unknown_not_allowed",
+                            "reason":             "garbage_category_unknown_not_allowed",
+                            "candidate_id":       cid,
+                            "qwen_verify_result": qwen_verify_res,
+                            "qwen_verify_attempts": verify_attempts,
+                        })
+                        continue
+
+                    det["garbage_category"] = garbage_category
+                    det["target_bin"] = target_bin
+                    det["garbage_category_cn"] = CATEGORY_CN.get(garbage_category, "未知")
+                    det["target_bin_cn"] = BIN_CN.get(target_bin, "unknown")
+                    det["qwen_verify_confidence"] = round(qwen_verify_conf, 4)
+                    det["qwen_verify_result"] = qwen_verify_res
+                    det["qwen_verify_attempts"] = verify_attempts
+                    det["verify_object_name"] = qwen_verify_res.get("object_name", "unknown_object")
+                    det["verify_garbage_category"] = garbage_category
+                    
+                    qwen_coarse_conf = det["qwen_coarse_confidence"]
+                    yolo_conf = det["yolo_confidence"]
+                    det["confidence"] = round(min(
+                        qwen_coarse_conf if qwen_coarse_conf > 0 else 0,
+                        yolo_conf        if yolo_conf > 0        else 0,
+                        qwen_verify_conf if qwen_verify_conf > 0 else 0,
+                    ), 4)
+
+                    coarse_obj_name = det["coarse_object_name"]
+                    verify_obj_name = det["verify_object_name"]
+                    coarse_cat = det["coarse_garbage_category_guess"]
+                    verify_cat = det["verify_garbage_category"]
+
+                    coarse_verify_mismatch = False
+                    mismatch_reason = "none"
+
+                    if coarse_cat != verify_cat:
+                        coarse_verify_mismatch = True
+                        mismatch_reason = "category_mismatch"
+                    elif coarse_obj_name.lower().strip() != verify_obj_name.lower().strip():
+                        coarse_verify_mismatch = True
+                        mismatch_reason = "object_name_mismatch"
+
+                    det["coarse_verify_mismatch"] = coarse_verify_mismatch
+                    det["coarse_verify_mismatch_reason"] = mismatch_reason
+                    det["coarse_verify_category_mismatch"] = (
+                        coarse_cat != verify_cat or
+                        verify_cat == "unknown" or
+                        not verify_is_graspable
+                    )
+                    det["coarse_verify_name_mismatch"] = (coarse_obj_name.lower().strip() != verify_obj_name.lower().strip())
+                    det["qwen_verify_skipped"] = False
+                    det["source"]["qwen_verify_skipped"] = False
+
+                    final_detections.append(det)
+                else:
+                    final_detections.append(det)
+
+            detections = final_detections + approach_candidates
+
+    num_qwen_verify_skipped = len(provisional_detections) - num_qwen_verify_calls
+
+    qwen_verify_total_sec = time.time() - t_verify_start
+
+    fb_meta = {
+        "fallback_used": False,
+        "fallback_reason": "none",
+        "executed_pipeline": "qwen_first",
+        "num_detections_before_dedup": num_before,
+        "verify_mode": args.verify_mode,
+        "num_qwen_verify_calls": num_qwen_verify_calls,
+        "num_qwen_verify_skipped": num_qwen_verify_skipped,
+        "qwen_coarse_sec": round(qwen_coarse_sec, 4),
+        "yolo_roi_total_sec": round(yolo_roi_total_sec, 4),
+        "qwen_verify_total_sec": round(qwen_verify_total_sec, 4),
+        "yolo_roi_calls": yolo_roi_calls,
+    }
+    return detections, rejected_detections, time.time() - t_start, qwen_candidates, fb_meta
+
+
+# ---------------------------------------------------------------------------
+# main()
+# ---------------------------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="YOLO11-seg + Qwen3-VL-Flash Perception (qwen_first / yolo_first)")
+    parser.add_argument("--image",   required=False, default="", help="Path to input image")
+    parser.add_argument("--model",   required=False, default="", help="Path to YOLO11-seg model (.pt)")
+    parser.add_argument("--conf",    type=float, default=0.15,
+                        help="YOLO confidence threshold")
+    parser.add_argument("--min-area-ratio", type=float, default=0.0005,
+                        help="Min bbox area / image area")
+    parser.add_argument("--max-area-ratio", type=float, default=0.60,
+                        help="Max bbox area / image area")
+    parser.add_argument("--pipeline", default="qwen_first",
+                        choices=["yolo_first", "qwen_first", "hybrid"],
+                        help="Perception pipeline (default: qwen_first)")
+    parser.add_argument("--verify-mode", default="planner_only",
+                        choices=["all", "planner_only", "top1", "none"],
+                        help="Qwen verify mode for crop verification (default: planner_only)")
+    parser.add_argument("--qwen-verify-workers", type=int, default=4,
+                        help="Number of threads for concurrent crop verification (default: 4)")
+    parser.add_argument("--max-qwen-candidates", type=int, default=20,
+                        help="Max Qwen coarse candidates to keep")
+    parser.add_argument("--max-roi-refine", type=int, default=20,
+                        help="Max candidates to run YOLO ROI refine on")
+    parser.add_argument("--roi-expand", type=float, default=2.0,
+                        help="Expand ratio for Qwen bbox -> ROI crop")
+    parser.add_argument("--qwen-coarse-conf", type=float, default=0.55,
+                        help="Min Qwen coarse confidence")
+    parser.add_argument("--qwen-verify-conf", type=float, default=0.50,
+                        help="Min Qwen verify confidence")
+    parser.add_argument("--allow-unknown", action="store_true", default=False,
+                        help="Allow unknown garbage_category in final detections")
+    parser.add_argument("--include-approach-in-detections", action="store_true", default=False,
+                        help="Include approach_required=true targets in final detections list")
+    parser.add_argument("--vis-mode", default="planner",
+                        choices=["planner", "debug"],
+                        help="Visualization overlay mode (default: planner)")
+    parser.add_argument("--save-vis", action="store_true",
+                        help="Save overlay visualization")
+    parser.add_argument("--qwen-api-check", action="store_true",
+                        help="Only check Qwen API connectivity, skip YOLO/image")
+    args = parser.parse_args()
+
+    # --- Handle --qwen-api-check before anything else ---
+    if args.qwen_api_check:
+        print("=" * 60)
+        print("[QWEN API CHECK]")
+        print("=" * 60)
+        api_key   = os.environ.get("QWEN_API_KEY",  "").strip()
+        base_url  = os.environ.get("QWEN_BASE_URL", "").strip()
+        model_name = os.environ.get("QWEN_MODEL", "").strip() or "qwen3-vl-flash"
+        print(f"  QWEN_API_KEY   : {'SET (***' + api_key[-4:] + ')' if api_key else 'NOT SET'}")
+        print(f"  QWEN_BASE_URL  : {base_url or 'NOT SET'}")
+        print(f"  QWEN_MODEL     : {model_name}")
+        # Check requests import (already imported at top)
+        print(f"  requests       : OK (version {requests.__version__})")
+        # Try import openai (optional)
+        try:
+            import openai
+            print(f"  openai package : OK (version {openai.__version__})")
+        except ImportError:
+            print("  openai package : NOT installed (not required, using requests)")
+        if not api_key or not base_url:
+            print("[QWEN API CHECK] FAIL: missing QWEN_API_KEY or QWEN_BASE_URL")
+            sys.exit(1)
+        # Minimal text-only request (no image) to verify connectivity
+        print("\n[QWEN API CHECK] Sending minimal text request...")
+        headers = {"Authorization": f"Bearer {api_key}",
+                   "Content-Type": "application/json"}
+        data = {
+            "model": model_name,
+            "messages": [{"role": "user",
+                           "content": [{"type": "text",
+                                         "text": '\u53ea\u8f93\u51fa JSON\uff1a{"ok": true}'}]}],
+        }
+        url = f"{base_url.rstrip('/')}/chat/completions"
+        try:
+            resp = requests.post(url, headers=headers, json=data, timeout=20)
+            print(f"  HTTP status    : {resp.status_code}")
+            if resp.status_code == 200:
+                content = resp.json()["choices"][0]["message"]["content"]
+                print(f"  Response       : {content[:200]}")
+                print("[QWEN API CHECK] OK")
+            else:
+                print(f"  Error body     : {resp.text[:300]}")
+                print("[QWEN API CHECK] FAIL: non-200 response")
+        except Exception as e:
+            print(f"  Exception      : {repr(e)}")
+            print("[QWEN API CHECK] FAIL: request exception")
+        sys.exit(0)
+
+    if args.pipeline == "hybrid":
+        args.pipeline = "qwen_first"
+
+    if not args.image:
+        print("[ERROR] --image is required (unless using --qwen-api-check)")
+        sys.exit(1)
+    if not args.model:
+        print("[ERROR] --model is required (unless using --qwen-api-check)")
+        sys.exit(1)
+
+    image_path = Path(args.image).expanduser().resolve()
+    model_path = Path(args.model).expanduser().resolve()
+
+    if not image_path.exists():
+        print(f"[ERROR] Image not found: {image_path}")
+        sys.exit(1)
+    if not model_path.exists():
+        print(f"[ERROR] Model not found: {model_path}")
+        sys.exit(1)
+
+    print(f"[START] pipeline={args.pipeline} | model={model_path.name}"
+          f" | image={image_path.name}")
+
+    img = cv2.imread(str(image_path))
+    if img is None:
+        print(f"[ERROR] Cannot read image: {image_path}")
+        sys.exit(1)
+    orig_h, orig_w = img.shape[:2]
+
+    model = YOLO(str(model_path))
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    qwen_candidates_for_vis = []
+
+    if args.pipeline == "yolo_first":
+        crop_dir = ROOT / "data" / "crops" / "qwen" / timestamp
+        crop_dir.mkdir(parents=True, exist_ok=True)
+        detections, rejected_detections, infer_sec = run_yolo_first(
+            image_path, model, args, img, orig_w, orig_h, crop_dir)
+
+        # Split approach_candidates
+        approach_candidates = []
+        final_detections = []
+        for d in detections:
+            if d.get("approach_required", False) and not args.include_approach_in_detections:
+                d["not_sent_to_planner_reason"] = "approach_required"
+                approach_candidates.append(d)
+            else:
+                final_detections.append(d)
+        detections = final_detections
+
+        # Normalize rejected_detections reason field
+        for r in rejected_detections:
+            ex_reason = r.get("reason") or r.get("reject_reason") or r.get("rejected_reason") or r.get("status") or r.get("error_reason") or "unknown_rejection_reason"
+            if ex_reason in ["invalid_qwen_bbox", "invalid_qwen_bbox_norm"]:
+                mapped_reason = "invalid_qwen_bbox_norm"
+            elif ex_reason in ["failed_yolo_refine", "no_yolo_detection_in_roi", "yolo_boxes_below_area_threshold"]:
+                mapped_reason = "failed_yolo_refine"
+            elif ex_reason in ["qwen_verify_not_graspable"]:
+                mapped_reason = "qwen_verify_not_graspable"
+            elif ex_reason == "duplicate_after_yolo_refine":
+                mapped_reason = "duplicate_after_yolo_refine"
+            else:
+                mapped_reason = ex_reason
+            r["reason"] = mapped_reason
+            if "reject_reason" not in r:
+                r["reject_reason"] = mapped_reason
+
+        summary = {
+            "mode":              "YOLO11_SEG_QWEN_PERCEPTION",
+            "backend":           "yolo11_seg_qwen",
+            "pipeline":          "yolo_first",
+            "requested_pipeline": "yolo_first",
+            "executed_pipeline": "yolo_first",
+            "fallback_used":     False,
+            "fallback_reason":   "none",
+            "model":             str(model_path),
+            "qwen_model":        os.environ.get("QWEN_MODEL", "qwen3-vl-flash"),
+            "image":             str(image_path),
+            "source_image":      str(image_path),
+            "image_width":       int(orig_w),
+            "image_height":      int(orig_h),
+            "created_timestamp": time.time(),
+            "inference_sec":     round(infer_sec, 4),
+            "planner_ready":     check_planner_ready(detections),
+            "num_detections":    len(detections),
+            "num_approach_candidates": len(approach_candidates),
+            "num_rejected":      len(rejected_detections),
+            "verify_mode":       args.verify_mode,
+            "num_qwen_verify_calls": len(detections) + len(approach_candidates),
+            "num_qwen_verify_skipped": 0,
+            "qwen_verify_workers": 1,
+            "qwen_verify_parallel": False,
+            "qwen_coarse_sec": 0.0,
+            "yolo_roi_total_sec": 0.0,
+            "qwen_verify_total_sec": 0.0,
+            "yolo_roi_calls": 0,
+            "detections":        detections,
+            "approach_candidates": approach_candidates,
+            "rejected_detections": rejected_detections,
+        }
+
+    else:  # qwen_first (default)
+        _get_qwen_config()  # set QWEN_MOCK_MODE early
+        # Clear raw log for this run
+        try:
+            DEFAULT_QWEN_RAW_LOG.parent.mkdir(parents=True, exist_ok=True)
+            DEFAULT_QWEN_RAW_LOG.write_text(
+                f"# Qwen raw responses — run started at {datetime.now().isoformat()}\n",
+                encoding="utf-8")
+        except Exception:
+            pass
+
+        (detections, rejected_detections, infer_sec,
+         qwen_candidates_for_vis, fb_meta) = run_qwen_first(
+            image_path, model, args, img, orig_w, orig_h, timestamp)
+
+        # Split approach_candidates
+        approach_candidates = []
+        final_detections = []
+        for d in detections:
+            if d.get("approach_required", False) and not args.include_approach_in_detections:
+                d["not_sent_to_planner_reason"] = "approach_required"
+                approach_candidates.append(d)
+            else:
+                final_detections.append(d)
+        detections = final_detections
+
+        # Normalize rejected_detections reason field
+        for r in rejected_detections:
+            ex_reason = r.get("reason") or r.get("reject_reason") or r.get("rejected_reason") or r.get("status") or r.get("error_reason") or "unknown_rejection_reason"
+            if ex_reason in ["invalid_qwen_bbox", "invalid_qwen_bbox_norm"]:
+                mapped_reason = "invalid_qwen_bbox_norm"
+            elif ex_reason in ["failed_yolo_refine", "no_yolo_detection_in_roi", "yolo_boxes_below_area_threshold"]:
+                mapped_reason = "failed_yolo_refine"
+            elif ex_reason in ["qwen_verify_not_graspable"]:
+                mapped_reason = "qwen_verify_not_graspable"
+            elif ex_reason == "duplicate_after_yolo_refine":
+                mapped_reason = "duplicate_after_yolo_refine"
+            else:
+                mapped_reason = ex_reason
+            r["reason"] = mapped_reason
+            if "reject_reason" not in r:
+                r["reject_reason"] = mapped_reason
+
+        executed_pl = fb_meta.get("executed_pipeline", "qwen_first")
+        fallback_used   = fb_meta.get("fallback_used", False)
+        fallback_reason = fb_meta.get("fallback_reason", "none")
+
+        if executed_pl == "yolo_first":
+            _mode    = "YOLO11_SEG_QWEN_PERCEPTION"
+            _backend = "yolo11_seg_qwen"
+        else:
+            _mode    = "YOLO11_QWEN_FIRST_ROI_PERCEPTION"
+            _backend = "qwen_first_yolo11_roi"
+
+        summary = {
+            "mode":              _mode,
+            "backend":           _backend,
+            "pipeline":          executed_pl,
+            "requested_pipeline": args.pipeline,
+            "executed_pipeline": executed_pl,
+            "fallback_used":     fallback_used,
+            "fallback_reason":   fallback_reason,
+            "model":             str(model_path),
+            "qwen_model":        os.environ.get("QWEN_MODEL", "qwen3-vl-flash"),
+            "image":             str(image_path),
+            "source_image":      str(image_path),
+            "image_width":       int(orig_w),
+            "image_height":      int(orig_h),
+            "created_timestamp": time.time(),
+            "inference_sec":     round(infer_sec, 4),
+            "planner_ready":     check_planner_ready(detections),
+            "num_qwen_candidates": len(qwen_candidates_for_vis),
+            "num_detections":    len(detections),
+            "num_approach_candidates": len(approach_candidates),
+            "num_rejected":      len(rejected_detections),
+            "verify_mode":       fb_meta.get("verify_mode", args.verify_mode),
+            "num_qwen_verify_calls": fb_meta.get("num_qwen_verify_calls", 0),
+            "num_qwen_verify_skipped": fb_meta.get("num_qwen_verify_skipped", 0),
+            "qwen_verify_workers": args.qwen_verify_workers if executed_pl == "qwen_first" else 1,
+            "qwen_verify_parallel": (args.qwen_verify_workers > 1 and fb_meta.get("verify_mode", args.verify_mode) in ["all", "planner_only"]) if executed_pl == "qwen_first" else False,
+            "qwen_coarse_sec": fb_meta.get("qwen_coarse_sec", 0.0) if executed_pl == "qwen_first" else 0.0,
+            "yolo_roi_total_sec": fb_meta.get("yolo_roi_total_sec", 0.0) if executed_pl == "qwen_first" else 0.0,
+            "qwen_verify_total_sec": fb_meta.get("qwen_verify_total_sec", 0.0) if executed_pl == "qwen_first" else 0.0,
+            "yolo_roi_calls": fb_meta.get("yolo_roi_calls", 0) if executed_pl == "qwen_first" else 0,
+            "detections":        detections,
+            "approach_candidates": approach_candidates,
+            "rejected_detections": rejected_detections,
+        }
+
+    save_json_atomic(DEFAULT_OUTPUT_JSON, summary)
+    print(f"[SAVED] JSON -> {DEFAULT_OUTPUT_JSON}")
+    print(f"[RESULT] {len(detections)} detections, "
+          f"{len(approach_candidates)} approach, "
+          f"{len(rejected_detections)} rejected")
+
+    # Save summary latest txt
+    summary_path = ROOT / "data" / "logs" / "yolo11_qwen_summary_latest.txt"
+    if args.pipeline == "yolo_first" or summary.get("executed_pipeline") == "yolo_first":
+        num_candidates = 0
+        num_before = len(detections) + len(approach_candidates)
+    else:
+        num_candidates = len(qwen_candidates_for_vis)
+        num_before = fb_meta.get("num_detections_before_dedup", len(detections) + len(approach_candidates))
+
+    summary_data = {
+        "image": str(image_path),
+        "num_qwen_candidates": num_candidates,
+        "num_detections_before_dedup": num_before,
+        "num_detections_after_dedup": len(detections),
+        "num_approach_candidates": len(approach_candidates),
+        "num_rejected": len(rejected_detections),
+        "planner_ready": summary.get("planner_ready", False),
+        "verify_mode": summary.get("verify_mode", "none"),
+        "num_qwen_verify_calls": summary.get("num_qwen_verify_calls", 0),
+        "num_qwen_verify_skipped": summary.get("num_qwen_verify_skipped", 0),
+        "qwen_verify_workers": summary.get("qwen_verify_workers", 1),
+        "qwen_verify_parallel": summary.get("qwen_verify_parallel", False),
+        "qwen_coarse_sec": summary.get("qwen_coarse_sec", 0.0),
+        "yolo_roi_total_sec": summary.get("yolo_roi_total_sec", 0.0),
+        "qwen_verify_total_sec": summary.get("qwen_verify_total_sec", 0.0),
+        "yolo_roi_calls": summary.get("yolo_roi_calls", 0),
+        "total_sec": summary.get("inference_sec", 0.0),
+        "detections": detections,
+        "approach_candidates": approach_candidates,
+        "rejected_detections": rejected_detections,
+    }
+    save_summary_text(summary_path, summary_data)
+
+    if args.save_vis:
+        _use_yolo_overlay = (
+            args.pipeline == "yolo_first" or
+            summary.get("executed_pipeline") == "yolo_first"
+        )
+        if _use_yolo_overlay:
+            draw_overlay_qwen(image_path, detections + approach_candidates, DEFAULT_OVERLAY)
+        else:
+            if args.vis_mode == "debug":
+                overlay_path = ROOT / "data" / "logs" / "yolo11_qwen_overlay_debug_latest.jpg"
+            else:
+                overlay_path = ROOT / "data" / "logs" / "yolo11_qwen_overlay_latest.jpg"
+
+            draw_overlay_qwen_first(
+                image_path, detections, rejected_detections,
+                qwen_candidates_for_vis, overlay_path,
+                approach_candidates=approach_candidates,
+                vis_mode=args.vis_mode)
+            print(f"[SAVED] Overlay ({args.vis_mode}) -> {overlay_path}")
+
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()

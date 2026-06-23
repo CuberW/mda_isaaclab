@@ -1,0 +1,133 @@
+{
+  "mode": "V2_4_CLOSED_LOOP_HOMOGRAPHY",
+  "status": "ok",
+  "trust_level_used": "low",
+  "table_z": 0.29,
+  "homography_pixel_to_world_xy": [
+    [
+      0.0027488881858322347,
+      0.004528233666135036,
+      -0.352663408197738
+    ],
+    [
+      0.0006405835113117584,
+      0.005574008288802298,
+      -0.944874642973706
+    ],
+    [
+      -0.006106160117656315,
+      -0.004900358679524828,
+      1.0
+    ]
+  ],
+  "inlier_count": 4,
+  "outlier_count": 0,
+  "inlier_rmse_xy_m": 0.0,
+  "inlier_max_error_xy_m": 0.0,
+  "all_rmse_xy_m": 0.0,
+  "all_max_error_xy_m": 0.0,
+  "rmse_xy_m": 0.0,
+  "max_error_xy_m": 0.0,
+  "initial_combo": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "used_inlier_count_for_refit": 4,
+  "pairs": [
+    {
+      "raw_class_name": "bottle",
+      "task_id": "v2_task_004",
+      "confidence": 0.814,
+      "prim_path": "/World/TrashSortingScene/trash_dirty_bottle",
+      "pixel_uv": [
+        231.7,
+        113.0
+      ],
+      "world_xy": [
+        -0.8218,
+        0.172
+      ],
+      "world_xy_source": "bbox_center",
+      "pair_trust": "low",
+      "pair_index": 0,
+      "pred_world_xy": [
+        -0.8218,
+        0.172
+      ],
+      "error_xy_m": 0.0,
+      "is_inlier": true
+    },
+    {
+      "raw_class_name": "papercup",
+      "task_id": "v2_task_001",
+      "confidence": 0.8746,
+      "prim_path": "/World/TrashSortingScene/trash_broken_cup",
+      "pixel_uv": [
+        116.88,
+        209.05
+      ],
+      "world_xy": [
+        -1.24,
+        -0.4
+      ],
+      "world_xy_source": "bbox_center",
+      "pair_trust": "low",
+      "pair_index": 1,
+      "pred_world_xy": [
+        -1.24,
+        -0.4
+      ],
+      "error_xy_m": 0.0,
+      "is_inlier": true
+    },
+    {
+      "raw_class_name": "potatocut",
+      "task_id": "v2_task_002",
+      "confidence": 0.8561,
+      "prim_path": "/World/TrashSortingScene/trash_banana_peel",
+      "pixel_uv": [
+        225.27,
+        172.22
+      ],
+      "world_xy": [
+        -0.8581,
+        -0.1307
+      ],
+      "world_xy_source": "bbox_center",
+      "pair_trust": "low",
+      "pair_index": 2,
+      "pred_world_xy": [
+        -0.8581,
+        -0.1307
+      ],
+      "error_xy_m": 0.0,
+      "is_inlier": true
+    },
+    {
+      "raw_class_name": "potato",
+      "task_id": "v2_task_003",
+      "confidence": 0.8518,
+      "prim_path": "/World/TrashSortingScene/trash_apple_core",
+      "pixel_uv": [
+        130.09,
+        167.98
+      ],
+      "world_xy": [
+        -1.2398,
+        -0.1211
+      ],
+      "world_xy_source": "bbox_center",
+      "pair_trust": "low",
+      "pair_index": 3,
+      "pred_world_xy": [
+        -1.2398,
+        -0.1211
+      ],
+      "error_xy_m": 0.0,
+      "is_inlier": true
+    }
+  ],
+  "calibration_source": "current_plan"
+}
