@@ -13,3 +13,16 @@
 weights
 IsaacLab
 kuavo-ros-opensource
+
+# Task319 is integrated into this repository as source code. Keep generated
+# artifacts and vendored research repos local-only.
+/task_319_garbage_sort/output/
+/task_319_garbage_sort/build/
+/task_319_garbage_sort/__pycache__/
+/task_319_garbage_sort/**/*.py[cod]
+/backups/task_319_garbage_sort_git_*/
+/src/nvidia-curobo/
+/third_party/anygrasp_sdk/
+/third_party/graspnetAPI/
+/third_party/graspnet-baseline/
+/third_party/ReKep/

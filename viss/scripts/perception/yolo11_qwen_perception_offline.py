@@ -802,6 +802,13 @@ def coarse_locate_trash_with_qwen(image_path: Path, img_w: int, img_h: int, max_
         "请在整张图中寻找“可被机器人抓取并投放的垃圾物体”。\n"
         "只允许识别真正的垃圾或疑似垃圾。不要把以下对象识别为垃圾：\n"
         "机器人机械臂、机器人夹爪、桌子、地面、墙面、阴影、垃圾桶、垃圾桶边缘、传感器、支架、线缆、任何明显不是垃圾的背景物体\n\n"
+        "垃圾分类规则必须严格遵守：\n"
+        "- 电池、药品、药盒、药板、胶囊、清洁剂、化学品容器、杀虫剂、消毒剂容器归为 hazardous。\n"
+        "- 马克笔、记号笔、荧光笔、油性笔、白板笔、墨水笔、颜料笔、含墨水/颜料/溶剂的书写工具归为 hazardous。\n"
+        "- 金属罐、易拉罐、塑料瓶、纸盒、纸杯、干净纸张、可回收塑料包装归为 recyclable。\n"
+        "- 香蕉皮、土豆、食物残渣、果皮、菜叶等可腐烂食物归为 kitchen。\n"
+        "- 无法归入以上类别且无有害属性的普通杂物归为 other。\n"
+        "- 如果目标像书写工具但无法确认是否含墨水/溶剂，优先按 hazardous 处理。\n\n"
         "请输出归一化比例坐标，不要输出像素坐标。\n\n"
         "请输出严格 JSON，不要输出解释性文字。\n\n"
         "输出格式：\n"
@@ -969,6 +976,13 @@ def classify_crop_with_qwen(crop_path: Path, raw_class: str = "trash_object",
         "target_bin 只能从以下五个值中选择：\n"
         "* bin_recyclable_blue\n* bin_kitchen_green\n"
         "* bin_hazardous_red\n* bin_other_gray\n* unknown\n\n"
+        "分类规则必须严格遵守：\n"
+        "- 电池、药品、药盒、药板、胶囊、清洁剂、化学品容器、杀虫剂、消毒剂容器必须输出 hazardous 和 bin_hazardous_red。\n"
+        "- 马克笔、记号笔、荧光笔、油性笔、白板笔、墨水笔、颜料笔、含墨水/颜料/溶剂的书写工具必须输出 hazardous 和 bin_hazardous_red。\n"
+        "- 金属罐、易拉罐、塑料瓶、纸盒、纸杯、干净纸张、可回收塑料包装输出 recyclable 和 bin_recyclable_blue。\n"
+        "- 香蕉皮、土豆、食物残渣、果皮、菜叶等可腐烂食物输出 kitchen 和 bin_kitchen_green。\n"
+        "- 无法归入以上类别且无有害属性的普通杂物输出 other 和 bin_other_gray。\n"
+        "- 如果主体像书写工具但无法确认是否含墨水/溶剂，优先按 hazardous 处理。\n\n"
         "输出格式：\n"
         "{\n"
         "  \"object_name\": \"...\",\n"
@@ -2347,10 +2361,10 @@ def main():
                         help="Qwen verify mode for crop verification (default: planner_only)")
     parser.add_argument("--qwen-verify-workers", type=int, default=4,
                         help="Number of threads for concurrent crop verification (default: 4)")
-    parser.add_argument("--max-qwen-candidates", type=int, default=20,
-                        help="Max Qwen coarse candidates to keep")
-    parser.add_argument("--max-roi-refine", type=int, default=20,
-                        help="Max candidates to run YOLO ROI refine on")
+    parser.add_argument("--max-qwen-candidates", type=int, default=0,
+                        help="Max Qwen coarse candidates to keep. Use 0 or a negative value for no limit.")
+    parser.add_argument("--max-roi-refine", type=int, default=0,
+                        help="Max candidates to run YOLO ROI refine on. Use 0 or a negative value for no limit.")
     parser.add_argument("--roi-expand", type=float, default=2.0,
                         help="Expand ratio for Qwen bbox -> ROI crop")
     parser.add_argument("--qwen-coarse-conf", type=float, default=0.55,
@@ -2369,6 +2383,10 @@ def main():
     parser.add_argument("--qwen-api-check", action="store_true",
                         help="Only check Qwen API connectivity, skip YOLO/image")
     args = parser.parse_args()
+    if args.max_qwen_candidates is not None and args.max_qwen_candidates <= 0:
+        args.max_qwen_candidates = None
+    if args.max_roi_refine is not None and args.max_roi_refine <= 0:
+        args.max_roi_refine = None
 
     # --- Handle --qwen-api-check before anything else ---
     if args.qwen_api_check:
