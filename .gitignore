@@ -28,7 +28,11 @@ kuavo-ros-opensource
 /third_party/graspnet-baseline/
 /third_party/ReKep/
 
+<<<<<<< HEAD
 /duarm/logs/
 /duarm/task_320_dual_arm_floor_sort/output/
 /duarm/task_320_dual_arm_floor_sort/__pycache__/
 /duarm/**/*.py[cod]
+=======
+duarm
+>>>>>>> 4c65690 (Ignore local duarm workspace)
