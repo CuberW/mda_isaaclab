@@ -2,6 +2,133 @@
 
 All implementation changes for this task should be documented here together with the command that demonstrates the changed behavior.
 
+## 2026-06-24: Use RGB-D top-grasp target and keep GraspNet out of the mainline
+
+Change:
+- 2026-06-25 follow-up: changed the default grasp-contact tuning back to no-penetration contact for the mainline:
+  `--trash_contact_offset_m=0.004`, `--trash_rest_offset_m=0.0`,
+  `--gripper_contact_offset_m=0.004`, `--gripper_rest_offset_m=0.0`.
+  `collision_props()` clamps negative `rest_offset` values to `0.0`, so the demo no longer relies on intentional visual/physical overlap.
+  The runtime logs now print `[TRASH_CONTACT]` and `[GRIPPER_CONTACT]` with the applied offsets.
+- 2026-06-25 follow-up: `--grasp_abort_if_object_moves_during_approach` now defaults off. Object displacement during approach is still recorded in `approach_object_motion_guard`, but small contact-induced shifts no longer hard-abort the demo.
+- 2026-06-25 follow-up: the final low grasp stage no longer replans with cuRobo by default. `--mind_sort_demo` uses cuRobo only to reach the RGB-D hover point, then runs `grasp_vertical_tcp_position_ik_descent`: the actual hover TCP X/Y is locked and only world Z is lowered to the RGB-D top-grasp target. This prevents the second stage from generating a diagonal/curved low-table trajectory that can sweep the object away.
+- Kept the current `--mind_sort_demo` mainline on the v28/VISS target plus RGB-D geometric candidate path; GraspNet is not used by the default command.
+- Switched the default physical grasp motion profile back to the smoother `20260624_225603`-style cuRobo path:
+  `--arm_motion_backend=curobo_right_arm`, position-only TCP, no axis alignment, `--safe_pregrasp_start=false`, and `--mind_sort_grasp_posture_reset_steps=0`.
+- `--mind_sort_force_stable_grasp_profile` is now optional and defaults off. It remains available only to force the older debug-cube local primitive for diagnostics.
+- Added an object-aware grasp posture policy for the RGB-D path:
+  `--rgbd_top_grasp_object_aware_orientation` defaults on and computes the selected object's XY PCA axes from the current RGB-D point cloud. The gripper jaw-opening axis is aligned to the object's short PCA axis.
+- Added default-on `--rgbd_top_grasp_enforce_orientation`: RGB-D top grasps now require the PCA-derived wrist posture at hover and during the final descent. The mainline sets `--curobo_position_only_tcp=false` unless manually overridden, so cuRobo/Kuavo no longer ignores the gripper axis while reaching the hover pose.
+- Corrected the RGB-D top-grasp frame convention: the selected grasp pose is now expressed in the attached gripper / `right_gripper_tcp` frame for cuRobo, while the wrist rotation is stored separately for IsaacLab IK. This accounts for the inline gripper mount rotation `RPY=(0, pi/2, 0)` and prevents the gripper jaw axis from appearing 90 degrees off.
+- Set `--rgbd_top_grasp_tcp_axis=0.0,0.0,-1.0` as the default wrist-to-TCP direction for RGB-D top grasps. The default is now a true top-down approach rather than the earlier right-arm-friendly slant, because the slanted approach was still visually clipping and looked like the old bad gripper posture.
+- In the default RGB-D/cuRobo mainline, cuRobo now first tries an official Kuavo analytic IK posture seed even while the TCP objective remains position-prioritized:
+  `--curobo_prefer_kuavo_seed_for_position_only=true`, `--kuavo_analytic_ik_approach_dirs=current`, and `--kuavo_analytic_ik_roll_samples_rad=0`.
+- cuRobo pose-goal orientation diagnostics remain available, but the default low final grasp approach no longer uses cuRobo replanning. `--mind_sort_demo` now uses `--curobo_grasp_local_tcp_descent=true`, implemented as a vertical TCP-only descent from the reached hover pose.
+- The old local descent failure was caused by commanding a fresh low target with free XY correction. The current descent locks the actual hover TCP X/Y, changes only world Z, uses explicit right-arm joint ids, and records `locked_xy_minus_object_target_xy_m` for audit.
+- Hover, pregrasp, and final descent now keep the gripper at the mechanical full-open width. Slow closing begins only after the descent stage has converged to the grasp height.
+- Added top-grasp targeting for RGB-D grasps:
+  `--top_grasp_shallow_target` defaults on, `--top_grasp_depth_m=0.0`, and `--top_grasp_hover_m=0.12`.
+- The commanded grasp TCP is now `(X_center, Y_center, Z_max - top_grasp_depth_m)` from the selected object's current RGB-D point cloud, not the object's 3D geometric-center Z.
+- The pregrasp hover point is now `(X_center, Y_center, Z_max + top_grasp_hover_m)`, so the final descent is vertical-only in XY.
+- Added a simulation diagnostic guard before gripper close:
+  `--grasp_abort_if_object_moves_during_approach=false` and `--grasp_object_motion_abort_threshold_m=0.008`. If the selected rigid object moves during low approach, the state machine records the movement; pass `--grasp_abort_if_object_moves_during_approach` only for strict debugging.
+- cuRobo execution metadata now records final TCP orientation delta, not only position error.
+- In `--mind_sort_demo`, top-grasp mode no longer auto-enables the older `safe_pregrasp_start` lift-current stage; the approach goes directly to the high hover point and then descends vertically.
+- Added execution metadata fields `top_grasp`, `pregrasp_position_source`, and `vertical_descent_only`.
+- Calibration logs now can print `Right_Gripper_Base_Pose_World` in addition to the older wrist-derived TCP pose. For jaw-axis alignment, use the gripper-base frame, not the wrist frame.
+- Added tunable collision offsets for grasp contact tuning:
+  `--trash_contact_offset_m`, `--trash_rest_offset_m`, `--gripper_contact_offset_m`, and `--gripper_rest_offset_m`.
+
+Validation command:
+
+```bash
+cd /home/zhxm/workspace/mda_isaaclab
+/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile \
+  task_319_garbage_sort/visual_grasp_record_demo.py \
+  task_319_garbage_sort/task319_grasp_sort_sm.py
+```
+
+Current GUI mainline command, without GraspNet:
+
+```bash
+cd /home/zhxm/workspace/mda_isaaclab
+/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
+```
+
+## 2026-06-24: Force mind-sort mainline onto the stable debug-cube grasp primitive (superseded as default)
+
+Change:
+- Added `--mind_sort_force_stable_grasp_profile`. This was initially default-on, but is now default-off after comparing against the smoother `20260624_225603` cuRobo approach.
+- In `--mind_sort_demo` physical-grasp mode, this now forces the same control/action-generation profile that validated the reachable dynamic debug cube:
+  `local_position_primitive`, RGB-D geometric center as the TCP position target, nominal `angled_top_down` wrist, no hard axis alignment, no cuRobo/Kuavo/legacy backend, no whole-body/torso assist, high-clearance safe-pregrasp, vertical descent, slow gripper close, contact check, then lift.
+- Added explicit `grasp_motion_profile=debug_cube_local_position_primitive_v1` and `action_generation_logic` fields to physical-grasp execution metadata and arm trajectory debug files so each run can be audited for whether it used the stable profile.
+- Updated arm trajectory policy text so local-primitive runs no longer claim to be using Kuavo/curobo.
+
+Validation command:
+
+```bash
+cd /home/zhxm/workspace/mda_isaaclab
+/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile \
+  task_319_garbage_sort/visual_grasp_record_demo.py \
+  task_319_garbage_sort/task319_grasp_sort_sm.py
+```
+
+Current GUI mainline command:
+
+```bash
+cd /home/zhxm/workspace/mda_isaaclab
+/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
+```
+
+## 2026-06-24: Tighten Nav2 final docking and smooth chassis execution
+
+Change:
+- Reduced the default Isaac-side angular command aggressiveness for Nav2:
+  `--nav_max_angular_speed=0.60` and `--nav_cmd_angular_scale=1.4`.
+- Tightened the bundled Nav2 goal checker from `0.06 m / 0.12 rad` to
+  `0.035 m / 0.07 rad` so non-grasp waypoint goals do not stop as early.
+- Added default-on Isaac-side `/cmd_vel` smoothing with
+  `--nav_cmd_linear_accel_limit=0.45`, `--nav_cmd_angular_accel_limit=0.70`,
+  and `--nav_cmd_filter_alpha=0.85`.
+- Tightened precision docking from `0.025 m / 0.04 rad` to
+  `0.012 m / 0.025 rad`, with lower final dock speed caps
+  `0.10 m/s / 0.22 rad/s`.
+- Enabled `--wheel_root_stabilization` by default so the current
+  `urdf_diagonal + kinematic_stable` wheel path keeps root roll/pitch/z stable
+  instead of letting wheel contact residuals show up as chassis shake.
+- Changed the ROS2 Nav2 RPP controller generated by
+  `scripts/ros2_nav2_stack_launcher.py` to use
+  `rotate_to_heading_angular_vel=0.55` and `max_angular_accel=0.75`.
+- Changed ROS2 bridge exchange failures to zero `/cmd_vel` instead of holding
+  the previous command, reducing stop-point overshoot after socket hiccups.
+
+Validation command:
+
+```bash
+cd /home/zhxm/workspace/mda_isaaclab
+/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile \
+  task_319_garbage_sort/visual_grasp_record_demo.py \
+  task_319_garbage_sort/scripts/ros2_nav2_stack_launcher.py
+```
+
+Navigation observation command:
+
+```bash
+cd /home/zhxm/workspace/mda_isaaclab
+/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --waypoint_nav_demo --waypoint_route home,table_left,bin_center,home --record_debug --record_video
+```
+
+Observed validation:
+- Short route `home,table_left` completed successfully in
+  `task_319_garbage_sort/output/head_camera_grasp_records/20260624_222102/`.
+- The `home -> table_left` transition stopped at `0.0327 m` XY error and
+  `0.0361 rad` yaw error after tightening Nav2 goal checking, compared with
+  about `0.0573 m / 0.0736 rad` before tightening.
+- Precision final dock remains reserved for grasp/table standpoints. Applying
+  it blindly to all waypoint goals was tested and rejected because lateral
+  residuals on side waypoints can make the simple nonholonomic dock controller
+  rotate away from the requested final yaw.
+
 ## 2026-06-24: Switch formal grasp mainline to stable RGB-D center primitive
 
 Change:

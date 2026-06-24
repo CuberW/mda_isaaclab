@@ -159,8 +159,8 @@ controller_server:
       max_allowed_time_to_collision_up_to_carrot: 0.20
       use_rotate_to_heading: true
       rotate_to_heading_min_angle: 0.785
-      rotate_to_heading_angular_vel: 0.75
-      max_angular_accel: 2.4
+      rotate_to_heading_angular_vel: 0.55
+      max_angular_accel: 0.75
       transform_tolerance: 0.3
 
 local_costmap:
