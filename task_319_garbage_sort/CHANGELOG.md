@@ -2,6 +2,69 @@
 
 All implementation changes for this task should be documented here together with the command that demonstrates the changed behavior.
 
+## 2026-06-25: Add directionless max-open envelope grasp for the v28 mainline
+
+Change:
+- Committed and pushed the previous grasp/navigation tuning baseline as
+  `87c017a Tune task319 grasp and navigation control`.
+- Added default-on `--rgbd_top_grasp_directionless_envelope` for the
+  `--mind_sort_demo` RGB-D top-grasp path. The selected object still comes
+  from the v28/VISS chain, but the grasp posture no longer aligns the jaw axis
+  to the object's RGB-D PCA axis.
+- Added `--rgbd_top_grasp_envelope_jaw_axis`, defaulting to world `+Y`, so the
+  open parallel jaw uses a fixed envelope posture. This is intended for
+  direction-agnostic trash objects where the object only needs to enter the
+  open gripper volume before closing.
+- In directionless envelope mode, `--mind_sort_demo` now uses cuRobo pose-goal
+  planning for the hover pose instead of position-only hover planning. This
+  prevents cuRobo from freely selecting a redundant wrist roll that can visually
+  look like a 45-degree twist.
+- In directionless envelope mode, `--top_grasp_depth_m` defaults to `0.02`.
+  The commanded virtual TCP is placed at `Z_max - 0.02m`, while the gripper is
+  kept fully open until the descent completes. This gives the physical fingers
+  a chance to close around the object's upper sides instead of closing above
+  the top surface.
+- Added `--gripper_post_close_hold_steps` (default `80`) so the closed gripper
+  holds contact briefly before lifting.
+- Added default-on `--curobo_lift_local_tcp_ascent`: after contact, lift now
+  locks the actual closed-gripper TCP X/Y/quaternion and only raises world Z
+  with a dense cuRobo Cartesian IK chain. This avoids a free-space lift replan
+  from changing the grasp posture and letting the object slip.
+- Promoted `--mind_sort_gripper_proximity_assist` from a diagnostic option to
+  the default `--mind_sort_demo` continuation policy. The state machine still
+  attempts the physical gripper approach, close, and lift first; if lift
+  verification fails but the final TCP-to-target/root distance is within
+  `0.02 m`, the object is treated as inside the gripper and is carried through
+  navigation and bin drop. Strict physical-only validation can still be forced
+  with `--no-mind_sort_gripper_proximity_assist`.
+- The proximity gate now evaluates the closest recorded low-grasp TCP pose,
+  including `top_grasp.target_world_m`, `tcp_pose_after_grasp_world`, and the
+  final TCP from the Cartesian descent segment. This prevents the later retreat
+  pose from incorrectly rejecting a grasp that reached the object within the
+  2 cm demo threshold.
+- Dynamic table-standpoint navigation now treats `SUCCEEDED_FINAL_DOCK_PARTIAL`
+  as a soft Nav2 success and lets the existing pre-grasp standpoint error gate
+  decide whether the robot is close enough to continue. This avoids aborting
+  the full sorting loop when Nav2 reaches the waypoint but the final docking
+  adjustment has a small residual.
+- Updated mind-sort metadata and physical-grasp execution metadata to record
+  the directionless-envelope mode and fixed jaw axis.
+- Validation run `20260625_013933` showed the envelope mode reached the target
+  within about `5.3 mm`, closed from `0.12 m` to a retained `0.0485 m` jaw
+  width, and passed the contact-width check. The remaining failure was lift
+  verification: the object root did not move upward, so the next change keeps
+  the gripper settled and lifts vertically from the actual closed pose.
+
+Validation command:
+
+```bash
+cd /home/zhxm/workspace/mda_isaaclab
+/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile \
+  task_319_garbage_sort/visual_grasp_record_demo.py \
+  task_319_garbage_sort/curobo_right_arm.py \
+  task_319_garbage_sort/task319_grasp_sort_sm.py
+```
+
 ## 2026-06-24: Use RGB-D top-grasp target and keep GraspNet out of the mainline
 
 Change:

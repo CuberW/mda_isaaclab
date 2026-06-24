@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -291,6 +291,8 @@ parser.add_argument("--gripper_tcp_feedback_gain", type=float, default=1.0, help
 parser.add_argument("--top_grasp_shallow_target", action=argparse.BooleanOptionalAction, default=True, help="For RGB-D center grasps, command the TCP to the object top surface minus --top_grasp_depth_m instead of the 3D geometric-center Z.")
 parser.add_argument("--top_grasp_depth_m", type=float, default=0.0, help="Depth below the RGB-D point-cloud Z_max used as the shallow top-grasp TCP target. Default 0 avoids open-loop rigid-body interpenetration before contact control is available.")
 parser.add_argument("--top_grasp_hover_m", type=float, default=0.12, help="Vertical hover distance above RGB-D point-cloud Z_max before the final straight-down grasp descent.")
+parser.add_argument("--rgbd_top_grasp_directionless_envelope", action=argparse.BooleanOptionalAction, default=True, help="Use a fixed top-down, max-open parallel-jaw envelope for RGB-D top grasps instead of aligning the jaw axis to the object's PCA axis.")
+parser.add_argument("--rgbd_top_grasp_envelope_jaw_axis", type=parse_xyz, default=(0.0, 1.0, 0.0), help="World-frame jaw-opening axis used by --rgbd_top_grasp_directionless_envelope. Default keeps the max-open gripper aligned laterally while ignoring object yaw.")
 parser.add_argument("--rgbd_top_grasp_object_aware_orientation", action=argparse.BooleanOptionalAction, default=True, help="Use the selected RGB-D point cloud PCA to choose the top-grasp jaw opening axis instead of a fixed wrist roll.")
 parser.add_argument("--rgbd_top_grasp_enforce_orientation", action=argparse.BooleanOptionalAction, default=True, help="For RGB-D top grasps, keep the object-aware gripper posture through hover and final descent instead of allowing position-only posture drift.")
 parser.add_argument("--rgbd_top_grasp_tcp_axis", type=parse_xyz, default=(0.0, 0.0, -1.0), help="Nominal world direction from wrist to TCP for RGB-D top grasps. Default is true top-down to avoid side-sweeping or clipping tabletop objects.")
@@ -340,8 +342,8 @@ parser.add_argument("--mind_sort_force_stable_grasp_profile", action=argparse.Bo
 parser.add_argument("--mind_sort_grasp_proposal", choices=("rgbd_center", "graspnet_baseline"), default="rgbd_center", help="Physical grasp candidate source used after v28/VISS selects and verifies the target object.")
 parser.add_argument("--mind_sort_graspnet_allow_centroid_fallback", action=argparse.BooleanOptionalAction, default=False, help="When --mind_sort_grasp_proposal graspnet_baseline has no candidate, allow the old RGB-D center fallback. Disabled by default so GraspNet failures stay visible.")
 parser.add_argument("--mind_sort_graspnet_save_debug", action=argparse.BooleanOptionalAction, default=True, help="Save GraspNet Baseline input masks, PLY, and candidate overlays under physical_grasp/graspnet_baseline for mainline diagnosis.")
-parser.add_argument("--mind_sort_gripper_proximity_assist", action=argparse.BooleanOptionalAction, default=False, help="Diagnostic-only legacy mode. In --mind_sort_physical_grasp mode, if the real gripper approaches the selected object but lift verification fails, place the object into the gripper carry pose and continue the sorting loop. Disabled by default; not part of physical-grasp validation.")
-parser.add_argument("--mind_sort_gripper_proximity_assist_max_distance_m", type=float, default=0.12, help="Maximum final TCP-to-target/root distance allowed for gripper-proximity assisted pickup. Set <=0 to disable this proximity gate.")
+parser.add_argument("--mind_sort_gripper_proximity_assist", action=argparse.BooleanOptionalAction, default=False, help="Demo carry mode. In --mind_sort_physical_grasp mode, if the real gripper reaches the selected object but lift verification fails, count a close gripper as holding the object and continue the sorting loop. Enabled by default in --mind_sort_demo unless explicitly disabled.")
+parser.add_argument("--mind_sort_gripper_proximity_assist_max_distance_m", type=float, default=0.02, help="Maximum final TCP-to-target/root distance allowed for gripper-proximity assisted pickup. Default is 0.02 m; set <=0 to disable this proximity gate.")
 parser.add_argument("--mind_sort_gripper_proximity_assist_steps", type=int, default=0, help="Animation steps for gripper-proximity assisted pickup. 0 reuses --grasp_steps.")
 parser.add_argument("--mind_sort_suction_assist", action=argparse.BooleanOptionalAction, default=False, help="Legacy alias for --mind_sort_gripper_proximity_assist. Kept only for old commands.")
 parser.add_argument("--mind_sort_suction_assist_max_distance_m", type=float, default=0.75, help="Legacy suction-assist proximity gate. Ignored unless --mind_sort_suction_assist is explicitly used.")
@@ -406,6 +408,7 @@ parser.add_argument("--trajectory_steps", type=int, default=520)
 parser.add_argument("--grasp_steps", type=int, default=220)
 parser.add_argument("--lift_steps", type=int, default=300)
 parser.add_argument("--hold_steps", type=int, default=180)
+parser.add_argument("--gripper_post_close_hold_steps", type=int, default=80, help="Closed-gripper settle steps after contact before lifting, used to let PhysX contact/friction stabilize.")
 parser.add_argument("--drop_steps", type=int, default=120)
 parser.add_argument("--max_joint_step", type=float, default=0.010)
 parser.add_argument("--pregrasp_offset", type=float, default=0.04)
@@ -475,6 +478,7 @@ parser.add_argument("--curobo_final_settle_steps", type=int, default=80, help="E
 parser.add_argument("--curobo_tcp_refine", action=argparse.BooleanOptionalAction, default=True, help="After a cuRobo segment, use a short right-arm position-only IsaacLab IK refinement if TCP tracking error remains high.")
 parser.add_argument("--curobo_tcp_refine_steps", type=int, default=80)
 parser.add_argument("--curobo_grasp_local_tcp_descent", action=argparse.BooleanOptionalAction, default=True, help="After cuRobo reaches pregrasp, descend vertically along fixed hover XY/quaternion with a cuRobo Cartesian IK chain instead of replanning a low table-near segment.")
+parser.add_argument("--curobo_lift_local_tcp_ascent", action=argparse.BooleanOptionalAction, default=True, help="After closing the gripper, lift vertically from the actual grasp TCP pose with a cuRobo Cartesian IK chain instead of free-space replanning.")
 parser.add_argument("--curobo_cartesian_descent_waypoint_spacing_m", type=float, default=0.002, help="Maximum TCP Z spacing between cuRobo IK waypoints during the final Cartesian grasp descent.")
 parser.add_argument("--curobo_cartesian_descent_min_waypoints", type=int, default=50, help="Minimum number of cuRobo IK target waypoints used for the final Cartesian grasp descent.")
 parser.add_argument("--curobo_cartesian_descent_return_seeds", type=int, default=48, help="Number of cuRobo IK seeds returned per Cartesian descent waypoint.")
@@ -623,6 +627,10 @@ if args_cli.mind_sort_demo:
     args_cli.enable_sort_nav = True
     args_cli.execute_grasp = bool(args_cli.mind_sort_physical_grasp)
     if args_cli.mind_sort_physical_grasp:
+        if not cli_arg_provided("--mind_sort_gripper_proximity_assist") and not cli_arg_provided("--no-mind_sort_gripper_proximity_assist"):
+            args_cli.mind_sort_gripper_proximity_assist = True
+        if not cli_arg_provided("--mind_sort_gripper_proximity_assist_max_distance_m"):
+            args_cli.mind_sort_gripper_proximity_assist_max_distance_m = 0.02
         mind_sort_grasp_proposal = str(args_cli.mind_sort_grasp_proposal)
         if mind_sort_grasp_proposal == "graspnet_baseline":
             args_cli.grasp_backend = "graspnet"
@@ -674,7 +682,16 @@ if args_cli.mind_sort_demo:
             if not cli_arg_provided("--curobo_prefer_kuavo_seed_for_position_only") and not cli_arg_provided("--no-curobo_prefer_kuavo_seed_for_position_only"):
                 args_cli.curobo_prefer_kuavo_seed_for_position_only = False
             if not cli_arg_provided("--curobo_position_only_tcp") and not cli_arg_provided("--no-curobo_position_only_tcp"):
-                args_cli.curobo_position_only_tcp = True
+                args_cli.curobo_position_only_tcp = False if bool(args_cli.rgbd_top_grasp_directionless_envelope) else True
+            if not cli_arg_provided("--rgbd_top_grasp_object_aware_orientation") and not cli_arg_provided("--no-rgbd_top_grasp_object_aware_orientation"):
+                args_cli.rgbd_top_grasp_object_aware_orientation = False if bool(args_cli.rgbd_top_grasp_directionless_envelope) else True
+            if bool(args_cli.rgbd_top_grasp_directionless_envelope):
+                if not cli_arg_provided("--top_grasp_depth_m"):
+                    args_cli.top_grasp_depth_m = 0.02
+                if not cli_arg_provided("--curobo_rotation_threshold_rad"):
+                    args_cli.curobo_rotation_threshold_rad = min(float(args_cli.curobo_rotation_threshold_rad), 0.35)
+                if not cli_arg_provided("--curobo_final_grasp_rotation_threshold_rad"):
+                    args_cli.curobo_final_grasp_rotation_threshold_rad = min(float(args_cli.curobo_final_grasp_rotation_threshold_rad), 0.35)
             if not cli_arg_provided("--kuavo_analytic_ik_approach_dirs"):
                 args_cli.kuavo_analytic_ik_approach_dirs = "current"
             if not cli_arg_provided("--kuavo_analytic_ik_roll_samples_rad"):
@@ -3991,15 +4008,32 @@ def estimate_rgbd_top_grasp_wrist_rotation(points_world: np.ndarray) -> tuple[np
         tcp_axis = np.array([0.35, 0.0, -0.94], dtype=np.float32)
     else:
         tcp_axis = tcp_axis / tcp_axis_norm
-    jaw_axis = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+    fixed_jaw_axis = np.asarray(args_cli.rgbd_top_grasp_envelope_jaw_axis, dtype=np.float32).reshape(3)
+    fixed_jaw_axis_norm = float(np.linalg.norm(fixed_jaw_axis))
+    if fixed_jaw_axis_norm < 1.0e-6:
+        fixed_jaw_axis = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+    else:
+        fixed_jaw_axis = fixed_jaw_axis / fixed_jaw_axis_norm
+    jaw_axis = fixed_jaw_axis.copy()
+    directionless_envelope = bool(args_cli.rgbd_top_grasp_directionless_envelope)
     meta: dict[str, Any] = {
-        "enabled": bool(args_cli.rgbd_top_grasp_object_aware_orientation),
-        "method": "rgbd_xy_pca_short_axis_jaw_top_grasp",
+        "enabled": bool(args_cli.rgbd_top_grasp_object_aware_orientation) or directionless_envelope,
+        "method": "rgbd_directionless_envelope_fixed_jaw_axis" if directionless_envelope else "rgbd_xy_pca_short_axis_jaw_top_grasp",
+        "directionless_envelope": directionless_envelope,
         "point_count": int(pts.shape[0]),
         "tcp_offset_axis_world": tcp_axis.astype(float).tolist(),
+        "fixed_envelope_jaw_axis_world": fixed_jaw_axis.astype(float).tolist(),
         "fallback_jaw_axis_world": jaw_axis.astype(float).tolist(),
     }
-    if bool(args_cli.rgbd_top_grasp_object_aware_orientation) and pts.shape[0] >= 12:
+    if directionless_envelope:
+        meta.update(
+            {
+                "success": True,
+                "jaw_axis_world": jaw_axis.astype(float).tolist(),
+                "reason": "directionless_envelope_uses_fixed_world_jaw_axis_and_max_open_gripper",
+            }
+        )
+    elif bool(args_cli.rgbd_top_grasp_object_aware_orientation) and pts.shape[0] >= 12:
         xy = pts[:, :2].astype(np.float32)
         xy_center = np.median(xy, axis=0)
         xy_centered = xy - xy_center
@@ -4787,6 +4821,38 @@ def run_slow_gripper_close(
         "close_end_width_m": float(end_width),
         "close_start_actual_width_m": float(actual_start_width),
         "close_final_actual_width_m": float(actual_end_width),
+    }
+
+
+def run_closed_gripper_settle(
+    sim: SimulationContext,
+    scene: InteractiveScene,
+    robot: Articulation,
+    gripper: AttachedParallelGripper,
+    tracker: Task319StateTracker,
+    hold_joint_target: torch.Tensor,
+    locked_root_pose_w: torch.Tensor,
+    *,
+    steps: int,
+) -> dict[str, Any]:
+    steps = max(0, int(steps))
+    start_width = gripper.current_width()
+    for _ in range(steps):
+        robot.set_joint_position_target(hold_joint_target)
+        gripper.close()
+        stabilize_robot_base(robot, locked_root_pose_w)
+        scene.write_data_to_sim()
+        sim.step(render=True)
+        scene.update(sim.get_physics_dt())
+        record_video_frame(scene)
+        gui_playback_tick(sim.get_physics_dt())
+        tracker.tick()
+    end_width = gripper.current_width()
+    return {
+        "settle_mode": "closed_gripper_contact_stabilization",
+        "settle_steps": int(steps),
+        "settle_start_actual_width_m": float(start_width),
+        "settle_final_actual_width_m": float(end_width),
     }
 
 
@@ -8548,7 +8614,10 @@ def position_only_grasp_poses(
                 candidate_gripper_base_rot_w = None
     if candidate_wrist_rot_w is not None:
         wrist_rot_w = candidate_wrist_rot_w
-        wrist_orientation_mode = "rgbd_pca_top_grasp"
+        if isinstance(candidate_orientation_meta, dict) and bool(candidate_orientation_meta.get("directionless_envelope")):
+            wrist_orientation_mode = "rgbd_directionless_envelope_top_grasp"
+        else:
+            wrist_orientation_mode = "rgbd_pca_top_grasp"
     elif args_cli.arm_motion_wrist_orientation == "top_down":
         wrist_rot_w = top_down_wrist_rotation()
         wrist_orientation_mode = args_cli.arm_motion_wrist_orientation
@@ -10053,6 +10122,8 @@ def execute_curobo_right_arm_attempt(
         "curobo_use_kuavo_analytic_seed": bool(args_cli.curobo_use_kuavo_analytic_seed),
         "curobo_position_only_tcp": bool(args_cli.curobo_position_only_tcp),
         "curobo_prefer_kuavo_seed_for_position_only": bool(args_cli.curobo_prefer_kuavo_seed_for_position_only),
+        "rgbd_top_grasp_directionless_envelope": bool(args_cli.rgbd_top_grasp_directionless_envelope),
+        "rgbd_top_grasp_envelope_jaw_axis": [float(v) for v in args_cli.rgbd_top_grasp_envelope_jaw_axis],
         "rgbd_top_grasp_enforce_orientation": bool(args_cli.rgbd_top_grasp_enforce_orientation),
         "kuavo_analytic_seed_available": bool(analytic_client is not None),
         "safe_pregrasp": {
@@ -10825,16 +10896,148 @@ def execute_curobo_right_arm_attempt(
             "lift_segment": None,
         }
 
-    ok, lift_segment, reason = plan_and_run_stage(
-        "lift_curobo",
-        "LIFT",
-        primitive["tcp_lift"],
-        int(args_cli.lift_steps),
-        float(args_cli.lift_error_threshold_m),
-        0.0,
-        wrist_pose_w=primitive["wrist_lift"],
-        allow_local_ik_fallback=True,
-    )
+    post_close_hold_joint_target = robot.data.joint_pos.clone()
+    if int(args_cli.gripper_post_close_hold_steps) > 0:
+        tracker.enter("GRASP", attempt_index=attempt_idx, stage="post_close_contact_settle", backend="curobo_right_arm")
+        settle_segment = run_closed_gripper_settle(
+            sim,
+            scene,
+            robot,
+            gripper,
+            tracker,
+            post_close_hold_joint_target,
+            locked_root_pose_w,
+            steps=int(args_cli.gripper_post_close_hold_steps),
+        )
+        segments.append({"name": "post_close_contact_settle", **settle_segment})
+
+    if bool(args_cli.curobo_lift_local_tcp_ascent):
+        tracker.enter("LIFT", attempt_index=attempt_idx, stage="cartesian_linear_curobo_ik_ascent", backend="curobo_right_arm")
+        lift_start_tcp_pose_w = tcp_pose_matrix(robot, ee_body_id).astype(np.float32)
+        vertical_lift_tcp_pose_w = lift_start_tcp_pose_w.copy()
+        vertical_lift_tcp_pose_w[:3, :3] = lift_start_tcp_pose_w[:3, :3]
+        vertical_lift_tcp_pose_w[2, 3] = max(
+            float(lift_start_tcp_pose_w[2, 3] + float(args_cli.lift_height)),
+            float(TABLE_SURFACE_Z + args_cli.safe_pregrasp_table_clearance_m),
+        )
+        lift_delta_w = vertical_lift_tcp_pose_w[:3, 3] - lift_start_tcp_pose_w[:3, 3]
+        lift_distance_m = float(abs(lift_delta_w[2]))
+        lift_spacing_m = max(0.002, float(args_cli.curobo_cartesian_descent_waypoint_spacing_m))
+        lift_waypoint_count = max(
+            max(2, int(args_cli.curobo_cartesian_descent_min_waypoints)),
+            int(math.ceil(lift_distance_m / lift_spacing_m)),
+        )
+        lift_tcp_waypoints_w: list[np.ndarray] = []
+        for waypoint_idx in range(1, lift_waypoint_count + 1):
+            alpha = float(waypoint_idx) / float(lift_waypoint_count)
+            pose_w = lift_start_tcp_pose_w.copy()
+            pose_w[:3, :3] = lift_start_tcp_pose_w[:3, :3]
+            pose_w[0, 3] = float(lift_start_tcp_pose_w[0, 3])
+            pose_w[1, 3] = float(lift_start_tcp_pose_w[1, 3])
+            pose_w[2, 3] = float((1.0 - alpha) * lift_start_tcp_pose_w[2, 3] + alpha * vertical_lift_tcp_pose_w[2, 3])
+            lift_tcp_waypoints_w.append(pose_w.astype(np.float32))
+        lift_tcp_waypoints_b = [world_pose_to_robot_base_pose(robot, pose_w) for pose_w in lift_tcp_waypoints_w]
+        refresh_curobo_world()
+        lift_start_q = robot.data.joint_pos[0, curobo_entity_cfg.joint_ids].detach().cpu().numpy().astype(np.float32)
+        lift_chain_plan: CuroboPlanResult = curobo_planner.solve_ik_chain_for_poses(
+            lift_start_q,
+            lift_tcp_waypoints_b,
+            return_seeds=int(args_cli.curobo_cartesian_descent_return_seeds),
+            max_waypoint_joint_l2_rad=float(args_cli.curobo_cartesian_descent_max_waypoint_joint_l2_rad),
+            position_only=False,
+        )
+        lift_min_steps = max(
+            int(args_cli.lift_steps),
+            max(1, int(lift_chain_plan.joint_positions.shape[0])) * max(1, int(args_cli.curobo_cartesian_descent_steps_per_waypoint)),
+        )
+        if bool(lift_chain_plan.success):
+            lift_segment = run_curobo_joint_trajectory(
+                sim,
+                scene,
+                robot,
+                curobo_entity_cfg,
+                lift_chain_plan.joint_positions,
+                min_steps=lift_min_steps,
+                gripper=gripper,
+                gripper_width=0.0,
+                locked_root_pose_w=locked_root_pose_w,
+                target_tcp_pose_w=vertical_lift_tcp_pose_w,
+                max_joint_step_override=float(args_cli.curobo_cartesian_descent_max_joint_step),
+                cartesian_lock_xy_w=lift_start_tcp_pose_w[:2, 3],
+                max_cartesian_xy_error_m=float(args_cli.curobo_cartesian_descent_max_xy_error_m),
+                abort_on_cartesian_xy_error=True,
+            )
+            lift_error = float(lift_segment.get("final_tcp_pos_error_m", lift_segment.get("final_pos_error_m", float("inf"))))
+        else:
+            lift_segment = {
+                "final_pos_error_m": float("inf"),
+                "final_tcp_pos_error_m": float("inf"),
+                "position_error_reference": "tcp",
+                "executed_steps": 0,
+                "aborted": True,
+                "abort_reason": lift_chain_plan.reason,
+            }
+            lift_error = float("inf")
+        lift_segment.update(
+            {
+                "name": "lift_cartesian_linear_curobo_ik_ascent",
+                "motion_backend": "curobo_dense_cartesian_ik_chain_after_close",
+                "curobo_lift_planning_skipped": True,
+                "curobo_lift_planning_skip_reason": "After physical contact, lift locks the actual grasp TCP X/Y/quaternion and only raises world Z.",
+                "curobo_cartesian_ik_chain_success": bool(lift_chain_plan.success),
+                "curobo_cartesian_ik_chain_reason": lift_chain_plan.reason,
+                "curobo_cartesian_ik_chain_metadata": lift_chain_plan.metadata,
+                "orientation_constraint_mode": "full_pose_curobo_cartesian_straight_line_hold_closed_gripper_tcp_orientation",
+                "vertical_lift_only": True,
+                "cartesian_straight_line_ascent": True,
+                "locked_xy_source": "actual_tcp_after_gripper_close",
+                "lift_start_tcp_world_m": lift_start_tcp_pose_w[:3, 3].astype(float).tolist(),
+                "target_tcp_world_m": vertical_lift_tcp_pose_w[:3, 3].astype(float).tolist(),
+                "final_tcp_world_m": tcp_pose_matrix(robot, ee_body_id)[:3, 3].astype(float).tolist(),
+                "lift_delta_world_m": lift_delta_w.astype(float).tolist(),
+                "cartesian_lift_waypoint_count": int(len(lift_tcp_waypoints_w)),
+                "cartesian_lift_min_steps": int(lift_min_steps),
+                "final_tcp_pos_error_m": lift_error,
+                "final_pos_error_m": lift_error,
+                "error_threshold_m": float(args_cli.lift_error_threshold_m),
+                "converged": bool(
+                    bool(lift_chain_plan.success)
+                    and not bool(lift_segment.get("aborted", False))
+                    and math.isfinite(lift_error)
+                    and lift_error <= float(args_cli.lift_error_threshold_m)
+                ),
+            }
+        )
+        ok = bool(lift_segment["converged"])
+        reason = "" if ok else (lift_segment.get("abort_reason") or "cuRobo Cartesian straight-line lift error exceeded threshold.")
+        if not ok:
+            fallback_ok, fallback_lift_segment, fallback_reason = plan_and_run_stage(
+                "lift_curobo",
+                "LIFT",
+                primitive["tcp_lift"],
+                int(args_cli.lift_steps),
+                float(args_cli.lift_error_threshold_m),
+                0.0,
+                wrist_pose_w=primitive["wrist_lift"],
+                allow_local_ik_fallback=True,
+            )
+            fallback_lift_segment["fallback_after_cartesian_lift_failure"] = True
+            fallback_lift_segment["fallback_reason"] = reason
+            segments.append(lift_segment)
+            lift_segment = fallback_lift_segment
+            ok = fallback_ok
+            reason = fallback_reason
+    else:
+        ok, lift_segment, reason = plan_and_run_stage(
+            "lift_curobo",
+            "LIFT",
+            primitive["tcp_lift"],
+            int(args_cli.lift_steps),
+            float(args_cli.lift_error_threshold_m),
+            0.0,
+            wrist_pose_w=primitive["wrist_lift"],
+            allow_local_ik_fallback=True,
+        )
     segments.append(lift_segment)
     updates["tcp_pose_after_lift_world"] = tcp_pose_matrix(robot, ee_body_id).tolist()
     updates["gripper_alignment_after_lift"] = gripper_alignment_diagnostics(robot, ee_body_id, primitive["tcp_lift"])
@@ -13265,6 +13468,12 @@ def run_nav2_goal(
     return {"label": label, "state": state_name, **result}
 
 
+def nav2_goal_reached_or_soft_docked(nav_result: dict[str, Any]) -> bool:
+    if bool(nav_result.get("success", False)):
+        return True
+    return str(nav_result.get("status", "")) == "SUCCEEDED_FINAL_DOCK_PARTIAL"
+
+
 def mind_sort_perception_pass(
     scene: InteractiveScene,
     out_dir: Path,
@@ -13575,13 +13784,14 @@ def mind_sort_suction_assist_attach(
         if legacy_suction_mode and int(args_cli.mind_sort_suction_assist_steps) > 0
         else int(args_cli.mind_sort_gripper_proximity_assist_steps)
     )
-    tracker.enter("GRIPPER_PROXIMITY_ASSIST", scene_key=scene_key, mode="diagnostic_explicit_attach_disabled_by_default")
+    tracker.enter("GRIPPER_PROXIMITY_ASSIST", scene_key=scene_key, mode="demo_2cm_gripper_proximity_carry")
     meta: dict[str, Any] = {
         "enabled": proximity_assist_enabled,
         "success": False,
         "suction_assisted": False,
         "gripper_proximity_assisted": False,
-        "mode": "gripper_proximity_assisted_pickup",
+            "mode": "gripper_proximity_assisted_pickup",
+            "policy": "if_final_gripper_or_object_distance_within_threshold_then_carry",
         "legacy_suction_alias": legacy_suction_mode,
         "scene_key": scene_key,
         "target": target_candidate_record(target),
@@ -13607,9 +13817,96 @@ def mind_sort_suction_assist_attach(
         tcp_pos = None
         meta["tcp_pose_error"] = repr(exc)
 
+    def point3(value: Any) -> np.ndarray | None:
+        if value is None:
+            return None
+        try:
+            arr = np.asarray(value, dtype=np.float32)
+        except Exception:
+            return None
+        if arr.shape == (4, 4):
+            point = arr[:3, 3]
+        else:
+            flat = arr.reshape(-1)
+            if flat.size < 3:
+                return None
+            point = flat[:3]
+        if not np.isfinite(point).all():
+            return None
+        return point.astype(np.float32)
+
+    def iter_physical_records(record: dict[str, Any] | None) -> Iterable[tuple[str, dict[str, Any]]]:
+        if not isinstance(record, dict):
+            return
+        yield "physical_grasp", record
+        attempts = record.get("attempts", [])
+        if isinstance(attempts, list):
+            for attempt_idx, attempt in enumerate(attempts):
+                if isinstance(attempt, dict):
+                    yield f"attempt_{attempt_idx}", attempt
+
+    target_points: list[tuple[str, np.ndarray]] = [
+        ("visual_rgbd_center", target_center.astype(np.float32)),
+        ("current_object_root", object_pos.astype(np.float32)),
+    ]
+    tcp_points: list[tuple[str, np.ndarray]] = []
+    if tcp_pos is not None:
+        tcp_points.append(("current_tcp_after_failure", tcp_pos.astype(np.float32)))
+
+    for record_label, record in iter_physical_records(physical_grasp):
+        top_target = point3((record.get("top_grasp") or {}).get("target_world_m"))
+        if top_target is not None:
+            target_points.append((f"{record_label}.top_grasp_target", top_target))
+        tcp_grasp = point3(record.get("tcp_grasp_pose_world"))
+        if tcp_grasp is not None:
+            target_points.append((f"{record_label}.tcp_grasp_pose", tcp_grasp))
+        tcp_after_grasp = point3(record.get("tcp_pose_after_grasp_world"))
+        if tcp_after_grasp is not None:
+            tcp_points.append((f"{record_label}.tcp_after_grasp", tcp_after_grasp))
+        segments = record.get("segments", [])
+        if not isinstance(segments, list):
+            continue
+        for seg_idx, segment in enumerate(segments):
+            if not isinstance(segment, dict):
+                continue
+            seg_name = str(segment.get("name", f"segment_{seg_idx}"))
+            seg_name_l = seg_name.lower()
+            # Only low grasp records prove object proximity. Pregrasp hover targets
+            # can be close to their own waypoint while still far above the object.
+            if "grasp" not in seg_name_l or "pregrasp" in seg_name_l:
+                continue
+            final_tcp = point3(segment.get("final_tcp_world_m"))
+            if final_tcp is not None:
+                tcp_points.append((f"{record_label}.{seg_name}.final_tcp", final_tcp))
+            for key in ("target_tcp_world_m", "object_grasp_target_tcp_world_m"):
+                seg_target = point3(segment.get(key))
+                if seg_target is not None:
+                    target_points.append((f"{record_label}.{seg_name}.{key}", seg_target))
+
+    proximity_checks: list[dict[str, Any]] = []
+    closest_distance = float("inf")
+    closest_source = ""
+    closest_tcp = None
+    closest_target = None
+    for tcp_label, tcp_point in tcp_points:
+        for target_label, target_point in target_points:
+            distance = float(np.linalg.norm(tcp_point - target_point))
+            check = {
+                "tcp_source": tcp_label,
+                "target_source": target_label,
+                "distance_m": distance,
+                "tcp_world_m": tcp_point.astype(float).tolist(),
+                "target_world_m": target_point.astype(float).tolist(),
+            }
+            proximity_checks.append(check)
+            if distance < closest_distance:
+                closest_distance = distance
+                closest_source = f"{tcp_label} -> {target_label}"
+                closest_tcp = tcp_point
+                closest_target = target_point
+    proximity_checks.sort(key=lambda item: float(item.get("distance_m", float("inf"))))
     tcp_to_target = float(np.linalg.norm(tcp_pos - target_center)) if tcp_pos is not None else float("inf")
     tcp_to_object = float(np.linalg.norm(tcp_pos - object_pos)) if tcp_pos is not None else float("inf")
-    closest_distance = min(tcp_to_target, tcp_to_object)
     meta.update(
         {
             "right_ee_body_id": ee_body_id,
@@ -13620,6 +13917,10 @@ def mind_sort_suction_assist_attach(
             "tcp_to_object_root_distance_m": tcp_to_object,
             "closest_suction_distance_m": closest_distance,
             "closest_gripper_proximity_distance_m": closest_distance,
+            "closest_gripper_proximity_source": closest_source,
+            "closest_gripper_proximity_tcp_world_m": closest_tcp.astype(float).tolist() if closest_tcp is not None else None,
+            "closest_gripper_proximity_target_world_m": closest_target.astype(float).tolist() if closest_target is not None else None,
+            "gripper_proximity_checks_top5": proximity_checks[:5],
         }
     )
     if max_distance > 0.0 and (not math.isfinite(closest_distance) or closest_distance > max_distance):
@@ -13657,7 +13958,7 @@ def mind_sort_suction_assist_attach(
             "success": True,
             "suction_assisted": legacy_suction_mode,
             "gripper_proximity_assisted": True,
-            "reason": "Physical gripper lift verification failed after close approach; continuing with gripper-proximity assisted pickup.",
+            "reason": "Physical gripper lift verification failed, but the gripper reached the object within the proximity threshold; continuing with gripper-proximity assisted pickup.",
             "steps": steps,
             "carried_pose_world": final_pos.astype(float).tolist(),
             "report_label": "gripper proximity assisted pickup",
@@ -14970,13 +15271,21 @@ def run_mind_sort_demo(sim: SimulationContext, scene: InteractiveScene, run_dir:
             "motion_backend": str(args_cli.arm_motion_backend),
             "motion_profile": STABLE_GRASP_MOTION_PROFILE if args_cli.arm_motion_backend == "local_position_primitive" else str(args_cli.arm_motion_backend),
             "curobo_grasp_local_tcp_descent": bool(args_cli.curobo_grasp_local_tcp_descent),
+            "curobo_lift_local_tcp_ascent": bool(args_cli.curobo_lift_local_tcp_ascent),
+            "gripper_post_close_hold_steps": int(args_cli.gripper_post_close_hold_steps),
             "curobo_prefer_kuavo_seed_for_position_only": bool(args_cli.curobo_prefer_kuavo_seed_for_position_only),
+            "rgbd_top_grasp_directionless_envelope": bool(args_cli.rgbd_top_grasp_directionless_envelope),
+            "rgbd_top_grasp_envelope_jaw_axis": [float(v) for v in args_cli.rgbd_top_grasp_envelope_jaw_axis],
             "rgbd_top_grasp_object_aware_orientation": bool(args_cli.rgbd_top_grasp_object_aware_orientation),
             "rgbd_top_grasp_enforce_orientation": bool(args_cli.rgbd_top_grasp_enforce_orientation),
             "action_generation_logic": (
                 "graspnet_baseline_v28_target_mask_current_standpoint_rgbd_to_curobo_position_only"
                 if str(args_cli.mind_sort_grasp_proposal) == "graspnet_baseline"
-                else "v28_rgbd_top_grasp_pca_jaw_axis_to_kuavo_seed_curobo_hover_then_fixed_wrist_vertical_descent"
+                else (
+                    "v28_rgbd_directionless_envelope_max_open_fixed_jaw_curobo_hover_then_cartesian_descent"
+                    if bool(args_cli.rgbd_top_grasp_directionless_envelope)
+                    else "v28_rgbd_top_grasp_pca_jaw_axis_to_kuavo_seed_curobo_hover_then_fixed_wrist_vertical_descent"
+                )
             ),
         },
         "simulated_pick": {
@@ -15167,7 +15476,7 @@ def run_mind_sort_demo(sim: SimulationContext, scene: InteractiveScene, run_dir:
             )
             cycle_meta["navigation"].append(nav_table)
             metadata["navigation"].append(nav_table)
-            if not nav_table.get("success", False):
+            if not nav2_goal_reached_or_soft_docked(nav_table):
                 cycle_meta["reason"] = f"Nav2 failed to reach dynamic table standpoint: {nav_table.get('status')}"
                 metadata["reason"] = cycle_meta["reason"]
                 tracker.enter("RECOVER", reason=metadata["reason"])
