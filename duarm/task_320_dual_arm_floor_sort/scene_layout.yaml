@@ -1,0 +1,101 @@
+objects:
+  - key: trash_00
+    name: floor_cardboard_box_a
+    category: recyclable
+    semantic_class: recyclable_cardboard
+    asset: null
+    scale: [1.60, 1.60, 1.60]
+    size: [0.56, 0.40, 0.42]
+    position: [1.18, -0.90, 0.21]
+    mass: 0.72
+    color: [0.66, 0.46, 0.24]
+  - key: trash_01
+    name: floor_cardboard_box_b
+    category: recyclable
+    semantic_class: recyclable_cardboard
+    asset: null
+    scale: [1.35, 1.35, 1.35]
+    size: [0.50, 0.38, 0.36]
+    position: [1.84, -0.62, 0.18]
+    mass: 0.68
+    color: [0.72, 0.52, 0.29]
+  - key: trash_02
+    name: floor_plastic_bottle_bundle
+    category: recyclable
+    semantic_class: recyclable_plastic
+    asset: null
+    scale: [1.55, 1.55, 1.55]
+    size: [0.48, 0.36, 0.46]
+    position: [2.42, -0.96, 0.23]
+    mass: 0.62
+    color: [0.20, 0.38, 0.76]
+  - key: trash_03
+    name: floor_can_pack
+    category: recyclable
+    semantic_class: recyclable_metal
+    asset: null
+    scale: [1.85, 1.85, 1.85]
+    size: [0.44, 0.34, 0.34]
+    position: [2.90, -0.34, 0.17]
+    mass: 0.84
+    color: [0.66, 0.68, 0.70]
+  - key: trash_04
+    name: floor_food_waste_bag
+    category: kitchen
+    semantic_class: kitchen_food_waste
+    asset: null
+    scale: [2.10, 2.10, 2.10]
+    size: [0.54, 0.40, 0.44]
+    position: [1.18, 0.04, 0.22]
+    mass: 0.58
+    color: [0.22, 0.60, 0.20]
+  - key: trash_05
+    name: floor_apple_scrap_box
+    category: kitchen
+    semantic_class: kitchen_food
+    asset: null
+    scale: [2.00, 2.00, 2.00]
+    size: [0.48, 0.36, 0.38]
+    position: [1.82, 0.46, 0.19]
+    mass: 0.60
+    color: [0.68, 0.18, 0.12]
+  - key: trash_06
+    name: floor_battery_pack
+    category: hazardous
+    semantic_class: hazardous_battery
+    asset: null
+    scale: [1.70, 1.70, 1.70]
+    size: [0.46, 0.34, 0.32]
+    position: [2.44, 0.16, 0.16]
+    mass: 0.90
+    color: [0.78, 0.10, 0.08]
+  - key: trash_07
+    name: floor_medicine_box
+    category: hazardous
+    semantic_class: hazardous_medicine
+    asset: null
+    scale: [1.65, 1.65, 1.65]
+    size: [0.50, 0.36, 0.36]
+    position: [3.04, 0.58, 0.18]
+    mass: 0.66
+    color: [0.86, 0.16, 0.14]
+  - key: trash_08
+    name: floor_foam_block
+    category: other
+    semantic_class: other_waste
+    asset: null
+    scale: [2.20, 2.20, 2.20]
+    size: [0.60, 0.42, 0.38]
+    position: [1.18, 1.02, 0.19]
+    mass: 0.42
+    color: [0.50, 0.50, 0.54]
+  - key: trash_09
+    name: floor_mixed_trash_bag
+    category: other
+    semantic_class: other_waste
+    asset: null
+    scale: [2.20, 2.20, 2.20]
+    size: [0.56, 0.42, 0.44]
+    position: [2.02, 1.06, 0.22]
+    mass: 0.70
+    color: [0.24, 0.24, 0.26]
