@@ -2,6 +2,34 @@
 
 All implementation changes for this task should be documented here together with the command that demonstrates the changed behavior.
 
+## 2026-06-24: Switch formal grasp mainline to stable RGB-D center primitive
+
+Change:
+- Archived this configuration in `task_319_garbage_sort/STABLE_GRASP_BASELINE_20260624.md`; the commit is intended to be tagged as `task319-stable-rgbd-center-primitive-20260624`.
+- Added `--exit_after_video_saved` (default on). After a normal recorded run flushes `external_grasp_demo.mp4` and `video_manifest.json`, Task319 exits the Python process directly instead of waiting for slow Isaac/Kit shutdown. Use `--no-exit_after_video_saved` when debugging shutdown behavior.
+- Changed the default right-arm backend from `curobo_right_arm` to `local_position_primitive` for the formal Task319 mainline.
+- The default grasp now uses the current-frame v28/Qwen target mask, RGB-D geometric center, nominal angled-top-down wrist geometry, position-only safe/pregrasp/final descent, TCP residual feedback correction, slow gripper closure, and contact verification before lift. Wrist axes are not hard constraints unless `--arm_motion_enforce_wrist_orientation` is explicitly enabled.
+- Raised the staged pregrasp clearance from `0.10 m` to `0.14 m`, kept at least `0.10 m` table clearance, lowered the global safe-pregrasp table clearance from `0.30 m` to `0.18 m` to avoid unreachable vertical lift-current waypoints, and made `--mind_sort_demo` enable safe-pregrasp waypoints even when not using cuRobo.
+- Slowed the default arm motion: `trajectory_steps=520`, `grasp_steps=220`, `lift_steps=300`, `max_joint_step=0.010`. In `--mind_sort_demo`, unspecified values are raised to `trajectory_steps>=560`, `safe_pregrasp_steps>=220`, `grasp_steps>=240`, and `lift_steps>=320`.
+- Kept `curobo_right_arm`, Kuavo IK, and GraspNet/AnyGrasp available as explicit diagnostic/research options, but they are no longer the default path for getting the sorting demo stable.
+
+Validation command:
+
+```bash
+cd /home/zhxm/workspace/mda_isaaclab
+/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile \
+  task_319_garbage_sort/visual_grasp_record_demo.py \
+  task_319_garbage_sort/task319_grasp_sort_sm.py
+```
+
+Current GUI run command:
+
+```bash
+cd /home/zhxm/workspace/mda_isaaclab
+/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
+```
+
+
 ## 2026-06-24: Rebuild Task319 right-gripper grasp diagnostics baseline
 
 Change:

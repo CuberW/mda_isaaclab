@@ -77,11 +77,7 @@ Selection policy:
   gripper lift stops that object and writes diagnostics. The legacy
   `--mind_sort_gripper_proximity_assist` attach path is diagnostic-only,
   disabled by default, and must not be used for physical-grasp validation.
-- Right-arm motion defaults to `curobo_right_arm` with
-  `--curobo_position_only_tcp` enabled. cuRobo constrains TCP XYZ position and
-  ignores gripper-axis alignment, so direction-insensitive trash objects do not
-  force redundant wrist/arm twists. `--curobo_use_kuavo_analytic_seed` remains
-  available as a fallback if position-only cuRobo planning fails.
+- Right-arm motion defaults to `local_position_primitive`: a staged RGB-D-center TCP grasp with nominal angled-top-down wrist geometry, position-only safe/pregrasp/descent/lift tracking, residual TCP feedback correction, slow gripper closure, and contact verification before lift. Wrist axes are not hard constraints unless `--arm_motion_enforce_wrist_orientation` is explicitly enabled. `curobo_right_arm` remains available only as an explicit diagnostic/research backend.
 
 API setup, in the same shell before launching:
 
@@ -100,16 +96,16 @@ Qwen API check:
 GUI visual-grasp test with default v28/Qwen perception and RGB-D centroid grasp:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --post_action_hold_steps 1200
+/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --post_action_hold_steps 1200
 ```
 
 GUI full-chain test: v28 original perception -> RGB-D centroid grasp -> Nav2 to matching bin side -> drop:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --enable_sort_nav --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 150 --post_action_hold_steps 1200
+/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --enable_sort_nav --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 150 --post_action_hold_steps 1200
 ```
 
-Current default mind-sort loop command, using the formal v28/Qwen perception and cuRobo+Kuavo analytic IK seed motion path:
+Current default mind-sort loop command, using formal v28/Qwen perception and the stable RGB-D-center local position grasp primitive:
 
 ```bash
 /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
@@ -118,7 +114,7 @@ Current default mind-sort loop command, using the formal v28/Qwen perception and
 Headless record/debug variant:
 
 ```bash
-timeout 480s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --post_action_hold_steps 0
+timeout 480s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --post_action_hold_steps 0
 ```
 
 Expected debug files in the cycle directory:
@@ -286,7 +282,7 @@ Headless strict visual-grasp acceptance command using GraspNet:
 
 ```bash
 export GLM_API_KEY='your GLM API key'
-timeout 420s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --strict_model_chain --record_debug --record_video --vlm_model glm-5v-turbo --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --mask_distance_threshold_m 0.02 --min_filtered_grasps 8 --ik_prescreen_top_k 20 --ik_prescreen_max_joint_delta_rad 4.5 --max_grasp_retries 3 --pregrasp_error_threshold_m 0.07 --grasp_error_threshold_m 0.06 --lift_error_threshold_m 0.08
+timeout 420s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --strict_model_chain --record_debug --record_video --vlm_model glm-5v-turbo --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --mask_distance_threshold_m 0.02 --min_filtered_grasps 8 --ik_prescreen_top_k 20 --ik_prescreen_max_joint_delta_rad 4.5 --max_grasp_retries 3 --pregrasp_error_threshold_m 0.07 --grasp_error_threshold_m 0.06 --lift_error_threshold_m 0.08
 ```
 
 Expected result:
@@ -298,13 +294,13 @@ GUI strict visual-grasp command using GraspNet:
 
 ```bash
 export GLM_API_KEY='your GLM API key'
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --execute_grasp --strict_model_chain --record_debug --record_video --vlm_model glm-5v-turbo --target_object_name potted --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --post_action_hold_steps 1200
+/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --execute_grasp --strict_model_chain --record_debug --record_video --vlm_model glm-5v-turbo --target_object_name potted --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --post_action_hold_steps 1200
 ```
 
 Headless motion-evidence video command without VLM/GraspNet dependencies:
 
 ```bash
-timeout 360s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --skip_vlm --skip_graspnet --use_centroid_fallback --target_object_name potted --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012
+timeout 360s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --skip_vlm --skip_graspnet --use_centroid_fallback --target_object_name potted --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010
 ```
 
 GUI strict visual grasp + experimental bin-drop navigation:
@@ -631,14 +627,14 @@ source task_319_garbage_sort/scripts/setup_nav2_user_install.bash
 Fallback physical-grasp comparison command:
 
 ```bash
-timeout 300s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --skip_vlm --skip_graspnet --use_centroid_fallback --target_object_name potted --record_debug --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012
+timeout 300s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --skip_vlm --skip_graspnet --use_centroid_fallback --target_object_name potted --record_debug --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010
 ```
 
 AnyGrasp experimental command after installing the licensed SDK assets:
 
 ```bash
 export GLM_API_KEY='your GLM API key'
-timeout 420s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --strict_model_chain --grasp_backend anygrasp --record_debug --record_video --vlm_model glm-5v-turbo --target_object_name potted --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --mask_distance_threshold_m 0.02 --min_filtered_grasps 8 --ik_prescreen_top_k 20 --ik_prescreen_max_joint_delta_rad 4.5 --max_grasp_retries 3 --pregrasp_error_threshold_m 0.07 --grasp_error_threshold_m 0.06 --lift_error_threshold_m 0.08 --anygrasp_grasp_to_tcp 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1
+timeout 420s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --strict_model_chain --grasp_backend anygrasp --record_debug --record_video --vlm_model glm-5v-turbo --target_object_name potted --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --mask_distance_threshold_m 0.02 --min_filtered_grasps 8 --ik_prescreen_top_k 20 --ik_prescreen_max_joint_delta_rad 4.5 --max_grasp_retries 3 --pregrasp_error_threshold_m 0.07 --grasp_error_threshold_m 0.06 --lift_error_threshold_m 0.08 --anygrasp_grasp_to_tcp 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1
 ```
 
 AnyGrasp notes:

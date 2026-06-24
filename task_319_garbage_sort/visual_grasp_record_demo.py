@@ -386,23 +386,24 @@ parser.add_argument("--nav2_planner_tolerance", type=float, default=0.12, help="
 parser.add_argument("--nav2_xy_goal_tolerance", type=float, default=0.06, help="Bundled Nav2 goal checker XY tolerance in meters.")
 parser.add_argument("--nav2_yaw_goal_tolerance", type=float, default=0.12, help="Bundled Nav2 goal checker yaw tolerance in radians.")
 parser.add_argument("--nav_publish_synthetic_obstacles", action=argparse.BooleanOptionalAction, default=False, help="Publish coarse synthetic scan obstacles. Disabled by default because the Nav2 static map contains the known table/bin geometry.")
-parser.add_argument("--trajectory_steps", type=int, default=360)
-parser.add_argument("--grasp_steps", type=int, default=80)
-parser.add_argument("--lift_steps", type=int, default=220)
+parser.add_argument("--trajectory_steps", type=int, default=520)
+parser.add_argument("--grasp_steps", type=int, default=220)
+parser.add_argument("--lift_steps", type=int, default=300)
 parser.add_argument("--hold_steps", type=int, default=180)
 parser.add_argument("--drop_steps", type=int, default=120)
-parser.add_argument("--max_joint_step", type=float, default=0.012)
+parser.add_argument("--max_joint_step", type=float, default=0.010)
 parser.add_argument("--pregrasp_offset", type=float, default=0.04)
-parser.add_argument("--arm_motion_backend", choices=("local_position_primitive", "legacy_differential_ik", "kuavo_ik", "kuavo_analytic_ik", "curobo_right_arm", "auto"), default="curobo_right_arm", help="Right-arm grasp execution backend. curobo_right_arm is the default mainline planner; local_position_primitive uses staged TCP position IK; legacy_differential_ik keeps the old 6D/position DLS path; kuavo_ik uses the external Kuavo IK sidecar; kuavo_analytic_ik uses the official Kuavo AnalyticArmIk solver; auto tries Kuavo IK then local primitive.")
+parser.add_argument("--arm_motion_backend", choices=("local_position_primitive", "legacy_differential_ik", "kuavo_ik", "kuavo_analytic_ik", "curobo_right_arm", "auto"), default="local_position_primitive", help="Right-arm grasp execution backend. local_position_primitive is the stable mainline: staged RGB-D-center TCP position grasp with a fixed angled wrist. curobo_right_arm remains available for collision-aware diagnostics; legacy_differential_ik keeps the old 6D/position DLS path; kuavo_ik uses the external Kuavo IK sidecar; kuavo_analytic_ik uses the official Kuavo AnalyticArmIk solver; auto tries Kuavo IK then local primitive.")
 parser.add_argument("--arm_motion_ready_pose", choices=("none", "carry"), default="carry", help="Joint-space pre-shape before Cartesian grasp motion.")
 parser.add_argument("--arm_motion_ready_steps", type=int, default=120)
-parser.add_argument("--arm_motion_pregrasp_clearance_m", type=float, default=0.10, help="Vertical TCP clearance above the grasp point for the staged position-only primitive.")
-parser.add_argument("--arm_motion_min_table_clearance_m", type=float, default=0.06, help="Minimum staged pregrasp TCP height above the table surface.")
+parser.add_argument("--arm_motion_pregrasp_clearance_m", type=float, default=0.14, help="Vertical TCP clearance above the grasp point for the staged position-only primitive.")
+parser.add_argument("--arm_motion_min_table_clearance_m", type=float, default=0.10, help="Minimum staged pregrasp TCP height above the table surface.")
 parser.add_argument("--arm_motion_converge_extra_steps", type=int, default=120, help="Extra closed-loop IK steps allowed per waypoint if TCP error remains above the threshold.")
 parser.add_argument("--arm_motion_converge_chunk_steps", type=int, default=60, help="Chunk size for extra closed-loop IK convergence.")
 parser.add_argument("--arm_motion_stop_on_regression", action=argparse.BooleanOptionalAction, default=True, help="Stop extra IK convergence chunks early when TCP error regresses. Disable for long reach motions that need the full convergence budget.")
 parser.add_argument("--arm_motion_use_target_center_position", action=argparse.BooleanOptionalAction, default=True, help="For non-legacy position-only execution, command the RGB-D target geometric center instead of the learned grasp translation.")
 parser.add_argument("--arm_motion_wrist_orientation", choices=("current", "side_pinch", "top_down", "angled_top_down"), default="angled_top_down", help="Wrist orientation used by the staged primitive. side_pinch keeps the inline gripper horizontal; angled_top_down tilts the inline gripper downward without requiring a strict vertical top grasp.")
+parser.add_argument("--arm_motion_enforce_wrist_orientation", action=argparse.BooleanOptionalAction, default=False, help="For local_position_primitive, treat --arm_motion_wrist_orientation as a hard 6D pose constraint. Disabled by default because current trash objects are direction-agnostic and TCP position is the stable grasp objective.")
 parser.add_argument("--angled_top_down_tcp_axis", type=parse_xyz, default=(0.65, 0.0, -0.76), help="World direction for the wrist-to-TCP axis when --arm_motion_wrist_orientation angled_top_down is used. This is the inline gripper local +X / wrist local -Z direction.")
 parser.add_argument("--whole_body_ik_assist", choices=("off", "waist", "waist_leg"), default="off", help="Experimental IsaacLab DLS whole-body assist for grasping/reachability. off controls only the right arm; waist adds waist pitch/yaw; waist_leg also adds knee/leg joints. Navigation standpoints remain unchanged.")
 parser.add_argument("--whole_body_ik_allow_with_auto", action=argparse.BooleanOptionalAction, default=True, help="Allow --whole_body_ik_assist when --arm_motion_backend auto falls back to the local IsaacLab IK primitive.")
@@ -461,7 +462,7 @@ parser.add_argument("--curobo_use_kuavo_analytic_seed", action=argparse.BooleanO
 parser.add_argument("--curobo_position_only_tcp", action=argparse.BooleanOptionalAction, default=True, help="Use cuRobo partial-pose planning for TCP targets: constrain XYZ position, ignore end-effector axis alignment, and regularize to the current joint state to avoid redundant twisted postures.")
 parser.add_argument("--safe_pregrasp_start", action=argparse.BooleanOptionalAction, default=True, help="Move the right TCP through high-clearance waypoints before PRE_GRASP to avoid sweeping tabletop objects.")
 parser.add_argument("--safe_pregrasp_steps", type=int, default=180, help="Steps per high-clearance safety waypoint before PRE_GRASP.")
-parser.add_argument("--safe_pregrasp_table_clearance_m", type=float, default=0.30, help="Minimum TCP height above the table surface during the safety waypoint.")
+parser.add_argument("--safe_pregrasp_table_clearance_m", type=float, default=0.18, help="Minimum TCP height above the table surface during the safety waypoint.")
 parser.add_argument("--safe_pregrasp_object_clearance_m", type=float, default=0.18, help="Minimum TCP height above the selected grasp point during the safety waypoint.")
 parser.add_argument("--safe_pregrasp_error_threshold_m", type=float, default=0.10, help="Maximum TCP error allowed for the high-clearance safety waypoint.")
 parser.add_argument("--fallback_position_only_ik", action=argparse.BooleanOptionalAction, default=True, help="Execute centroid fallback grasps by tracking TCP position only; target axes are not treated as constraints.")
@@ -499,6 +500,7 @@ parser.add_argument("--gui_playback_rate", type=float, default=1.0, help="GUI pl
 parser.add_argument("--async_model_inference", action=argparse.BooleanOptionalAction, default=True, help="Run YOLO/VLM/grasp inference in a background worker during GUI demos.")
 parser.add_argument("--post_action_hold_steps", type=int, default=240, help="Extra GUI-visible simulation steps after a one-cycle grasp before closing.")
 parser.add_argument("--record_video", action=argparse.BooleanOptionalAction, default=True, help="Record an external observer-camera MP4 showing the robot/table/grasp motion.")
+parser.add_argument("--exit_after_video_saved", action=argparse.BooleanOptionalAction, default=True, help="After a normal run finishes and the observer MP4/manifest have been flushed, exit the Python process directly instead of waiting for slow Isaac/Kit shutdown.")
 parser.add_argument("--video_width", type=int, default=1280)
 parser.add_argument("--video_height", type=int, default=720)
 parser.add_argument("--video_fps", type=float, default=30.0)
@@ -596,9 +598,21 @@ if args_cli.mind_sort_demo:
         if not cli_arg_provided("--arm_motion_ready_pose"):
             args_cli.arm_motion_ready_pose = "none"
         if not cli_arg_provided("--arm_motion_pregrasp_clearance_m"):
-            args_cli.arm_motion_pregrasp_clearance_m = min(float(args_cli.arm_motion_pregrasp_clearance_m), 0.06)
+            args_cli.arm_motion_pregrasp_clearance_m = max(float(args_cli.arm_motion_pregrasp_clearance_m), 0.14)
+        if not cli_arg_provided("--arm_motion_min_table_clearance_m"):
+            args_cli.arm_motion_min_table_clearance_m = max(float(args_cli.arm_motion_min_table_clearance_m), 0.10)
         if not cli_arg_provided("--safe_pregrasp_start") and not cli_arg_provided("--no-safe_pregrasp_start"):
-            args_cli.safe_pregrasp_start = bool(args_cli.arm_motion_backend == "curobo_right_arm")
+            args_cli.safe_pregrasp_start = True
+        if not cli_arg_provided("--safe_pregrasp_steps"):
+            args_cli.safe_pregrasp_steps = max(int(args_cli.safe_pregrasp_steps), 220)
+        if not cli_arg_provided("--trajectory_steps"):
+            args_cli.trajectory_steps = max(int(args_cli.trajectory_steps), 560)
+        if not cli_arg_provided("--grasp_steps"):
+            args_cli.grasp_steps = max(int(args_cli.grasp_steps), 240)
+        if not cli_arg_provided("--lift_steps"):
+            args_cli.lift_steps = max(int(args_cli.lift_steps), 320)
+        if not cli_arg_provided("--max_joint_step"):
+            args_cli.max_joint_step = min(float(args_cli.max_joint_step), 0.010)
         if not cli_arg_provided("--wrist_refine_grasp") and not cli_arg_provided("--no-wrist_refine_grasp"):
             args_cli.wrist_refine_grasp = False
         if not cli_arg_provided("--target_reachability_ik_check") and not cli_arg_provided("--no-target_reachability_ik_check"):
@@ -8560,15 +8574,16 @@ def execute_local_position_primitive_attempt(
     segments.extend(torso_preshape_segments)
     if bool(torso_preshape_meta.get("success", False)):
         primitive = position_only_grasp_poses(poses, robot, ee_body_id, candidate)
-    use_pose_tracking = args_cli.arm_motion_wrist_orientation in {"side_pinch", "top_down", "angled_top_down"}
+    use_pose_tracking = bool(args_cli.arm_motion_enforce_wrist_orientation) and args_cli.arm_motion_wrist_orientation in {"side_pinch", "top_down", "angled_top_down"}
     stage_ik_controller = pose_ik_controller if use_pose_tracking else position_ik_controller
     stage_tcp_position_control = not use_pose_tracking
     updates: dict[str, Any] = {
         "motion_backend": "local_position_primitive",
         "ik_command_type": str(stage_ik_controller.cfg.command_type),
         "tcp_position_control": bool(stage_tcp_position_control),
-        "orientation_constraint_mode": f"fixed_{args_cli.arm_motion_wrist_orientation}_wrist" if use_pose_tracking else "position_only_tcp",
+        "orientation_constraint_mode": f"fixed_{args_cli.arm_motion_wrist_orientation}_wrist" if use_pose_tracking else "position_only_tcp_nominal_wrist_only",
         "axis_alignment_required": False,
+        "wrist_orientation_hard_constraint": bool(use_pose_tracking),
         "isaaclab_grasp_ik": isaaclab_grasp_ik_metadata(),
         "safe_pregrasp": {
             "enabled": bool(args_cli.safe_pregrasp_start),
@@ -14871,11 +14886,22 @@ def main() -> None:
         f"angular_scale={float(args_cli.nav_cmd_angular_scale):.2f}.",
         flush=True,
     )
+    run_failed = False
     try:
         run_loop(sim, scene, run_dir)
+    except BaseException:
+        run_failed = True
+        raise
     finally:
+        video_saved = False
         if _VIDEO_RECORDER is not None:
             _VIDEO_RECORDER.finalize()
+            video_saved = bool(_VIDEO_RECORDER.enabled and _VIDEO_RECORDER.path.exists())
+        if bool(args_cli.exit_after_video_saved) and bool(args_cli.record_video) and video_saved and not run_failed:
+            print("[INFO] Exiting directly after observer video saved; skipping slow Isaac/Kit shutdown. Use --no-exit_after_video_saved to disable.", flush=True)
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os._exit(0)
 
 
 if __name__ == "__main__":
