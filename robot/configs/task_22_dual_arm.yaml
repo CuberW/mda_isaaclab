@@ -1,0 +1,123 @@
+# Task 2.2: Dual-Arm VLA Collaborative Transport
+
+task:
+  type: dual_arm_vla
+  name: "Dual-Arm VLA Collaborative Transport"
+  max_steps: 500
+  random_seed: 42
+  prewarm_before_viewer: true
+  max_base_step: 0.08
+  max_joint_step: 0.35
+  max_object_step: 0.18
+  max_ctrl_step: 3.5
+
+robot:
+  type: franka_panda_dual
+  simulator: mujoco
+  mjcf_path: "simulation/robots/dual_panda_scene.xml"
+  dof: 14
+  control_freq: 50.0
+
+perception:
+  detector: grounding_dino
+  segmentor: sam
+  grasp_estimator: graspnet
+  depth_method: mujoco
+  confidence_threshold: 0.3
+  cameras:
+    - name: scene_camera
+      type: rgbd
+      width: 640
+      height: 480
+    - name: left_wrist_camera
+      type: rgbd
+      width: 640
+      height: 480
+    - name: right_wrist_camera
+      type: rgbd
+      width: 640
+      height: 480
+
+decision:
+  llm: qwen2.5-7b
+  vla: none
+  task_planner: dag_plan
+  use_code_as_policies: false
+  llm_endpoint: ""
+
+execution:
+  motion_planner: robosuite_wbc
+  collision_checker: fcl
+  ik_solver: mink
+  max_velocity: 1.0
+  max_acceleration: 2.0
+
+training:
+  framework: robomimic
+  policy: act
+  data_augmentation: none
+
+dual_arm_params:
+  arm_base_distance: 0.8
+  max_sync_error: 0.02
+  max_position_error: 0.12
+  max_tilt_angle: 5.0
+  master_arm: left
+  joint_kp: 80.0
+  joint_damping: 4.0
+  max_ctrl_delta: 0.08
+  closed_loop_phases: []
+  enable_robosuite_reference: false
+  ready_left: [-0.22, 0.52, 1.08]
+  ready_right: [-0.22, -0.52, 1.08]
+  rod_grasp_separation: 0.32
+  near_attach_distance: 0.025
+  pinch_frame_attach_limit: 0.045
+  grip_open: 0.015
+  grip_closed: 0.0
+  approach_z: 0.74
+  grasp_z: 0.62
+  lift_z: 0.88
+  place_z: 0.84
+  wbc:
+    kp_pos: 190.0
+    kd_pos: 40.0
+    kp_rel: 1200.0
+    kd_rel: 150.0
+    kp_ori: 160.0
+    kd_ori: 34.0
+    damping: 0.0002
+    joint_damping: 2.0
+    posture_gain: 1.5
+    torque_limit: 80.0
+    max_torque_delta: 3.0
+    object_feedback_gain: 0.70
+    max_object_correction: 0.08
+
+test_tasks:
+  - instruction: "用双手把长杆放到指定区域"
+    object: long_rod
+    task_type: carry
+    arm_roles: sync
+  - instruction: "左手扶着盒子，右手把物件放进去"
+    object: box
+    task_type: hold_and_place
+    arm_roles: master_slave
+  - instruction: "一起抬起箱子搬运到目标点"
+    object: box
+    task_type: coordinated_lift
+    arm_roles: sync
+
+scene_objects:
+  - name: long_rod
+    type: capsule
+    size: [0.03, 0.5]
+    start_pos: [0, 0, 0.2]
+  - name: box
+    type: box
+    size: [0.15, 0.1, 0.1]
+    start_pos: [0, 0, 0.15]
+  - name: small_object_a
+    type: sphere
+    size: [0.03]
+    start_pos: [0.1, 0.05, 0.05]

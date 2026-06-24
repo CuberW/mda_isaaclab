@@ -1,0 +1,92 @@
+# Task 3.19: Stretch Wheeled Robot Garbage Sorting
+
+task:
+  type: garbage_sort
+  name: "Stretch Garbage Sorting"
+  max_steps: 500
+  random_seed: 42
+  demo_objects: 1
+  viewer_demo_objects: 1
+  reachable_object_x_max: 0.97
+  reachable_object_y_max: 0.35
+  reachable_goal_dist_max: 0.95
+  prewarm_before_viewer: true
+  max_base_step: 0.08
+  max_joint_step: 0.35
+  max_object_step: 0.18
+  max_ctrl_step: 0.75
+
+robot:
+  type: stretch
+  simulator: mujoco
+  mjcf_path: "simulation/menagerie/hello_robot_stretch/trash_sorting.xml"
+  dof: 4
+  control_freq: 50.0
+
+perception:
+  detector: grounding_dino
+  segmentor: none
+  grasp_estimator: graspnet
+  depth_method: mujoco
+  confidence_threshold: 0.15
+  cameras:
+    - name: head_camera
+      type: rgbd
+      width: 640
+      height: 480
+    - name: navigation_camera
+      type: rgbd
+      width: 640
+      height: 480
+
+decision:
+  llm: none
+  vla: none
+  task_planner: state_machine
+  use_code_as_policies: false
+
+execution:
+  motion_planner: stretch_dwa
+  collision_checker: mujoco
+  ik_solver: stretch_mujoco_api
+  max_velocity: 1.0
+  max_acceleration: 2.0
+
+training:
+  framework: none
+  policy: none
+  data_augmentation: none
+
+scene_objects:
+  - class: recyclable
+    models: [plastic_bottle, newspaper, aluminum_can, glass_jar]
+  - class: kitchen_waste
+    models: [apple_core, banana_peel, bread_crust, vegetable_scrap]
+  - class: hazardous
+    models: [battery, medicine_bottle, light_bulb]
+  - class: other
+    models: [tissue_paper, ceramic_cup, dirty_plastic_bag]
+
+trash_bins:
+  - id: bin_recyclable
+    color: [0, 0, 1.0]
+    label: "可回收垃圾"
+    position: [2.0, -1.5, 0]
+  - id: bin_kitchen
+    color: [0, 1.0, 0]
+    label: "厨余垃圾"
+    position: [2.0, -0.5, 0]
+  - id: bin_hazardous
+    color: [1.0, 0, 0]
+    label: "有害垃圾"
+    position: [2.0, 0.5, 0]
+  - id: bin_other
+    color: [0.3, 0.3, 0.3]
+    label: "其他垃圾"
+    position: [2.0, 1.5, 0]
+
+garbage_categories:
+  recyclable: [plastic_bottle, newspaper, aluminum_can, glass_jar, cardboard, metal_can, plastic_bag]
+  kitchen_waste: [apple_core, banana_peel, food_scrap, vegetable, fruit_peel, egg_shell, bread]
+  hazardous: [battery, medicine, light_bulb, paint_can, pesticide_bottle, expired_drug]
+  other: [tissue, ceramic, cigarette_butt, dirty_packaging, diaper, sanitary_pad]

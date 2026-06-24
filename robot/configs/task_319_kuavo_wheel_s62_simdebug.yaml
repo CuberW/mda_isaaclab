@@ -1,0 +1,145 @@
+# Task 3.19 sim-debug variant for validating standalone IK + MuJoCo execution.
+
+task:
+  type: garbage_sort
+  name: "Kuavo 5-W v62 Garbage Sorting SimDebug"
+  max_steps: 500
+  random_seed: 42
+  demo_objects: 1
+  viewer_demo_objects: 1
+  reachable_object_x_max: 1.65
+  reachable_object_y_max: 0.45
+  reachable_goal_dist_max: 1.45
+  prewarm_before_viewer: true
+  max_base_step: 0.10
+  max_joint_step: 0.35
+  max_object_step: 0.18
+  max_ctrl_step: 2.5
+  kuavo_grasp_standoff_m: 0.52
+  max_reachability_candidates: 36
+  rekep:
+    enabled: true
+    hover_height_m: 0.15
+    grasp_depth_m: 0.0
+    xy_tolerance_m: 0.01
+
+robot:
+  type: kuavo_wheel
+  simulator: mujoco
+  mjcf_path: "simulation/scenes/task_319_kuavo_wheel_s62.xml"
+  camera_name: "camera_rgb"
+  dof: 14
+  control_freq: 50.0
+
+perception:
+  detector: grounding_dino
+  segmentor: none
+  grasp_estimator: graspnet
+  depth_method: mujoco
+  confidence_threshold: 0.15
+  cameras:
+    - name: camera_rgb
+      type: rgbd
+      width: 640
+      height: 480
+    - name: overview_cam
+      type: rgbd
+      width: 640
+      height: 480
+
+decision:
+  llm: none
+  vla: none
+  task_planner: state_machine
+  use_code_as_policies: false
+
+execution:
+  motion_planner: kuavo_standalone_ik_simdebug
+  collision_checker: mujoco
+  ik_solver: kuavo_standalone_ik
+  official_ik:
+    enabled: false
+    allow_local_fallback: true
+    standalone_ik:
+      linear_error_max: 0.03
+      angular_error_max: 0.12
+  official_control:
+    enabled: false
+    required: false
+  max_velocity: 0.35
+  max_acceleration: 1.0
+
+ros2:
+  distro_setup: "/opt/ros/jazzy/setup.bash"
+  workspace_setup: "~/ros2_ws/install/setup.bash"
+  wsl_distro: "UbuntuRobot"
+  use_wsl_on_windows: true
+  command_timeout_s: 8.0
+
+nav2:
+  action_name: "/kuavo/navigate_to_pose"
+  bridge_dir: ".bridge"
+  odom_file: "odom.json"
+  cmd_vel_file: "cmd_vel.json"
+  position_tolerance_m: 0.05
+  yaw_tolerance_rad: 0.08
+  timeout_s: 30.0
+  max_linear_velocity: 0.35
+  max_angular_velocity: 0.8
+  pid_kp_linear: 1.2
+  pid_kp_angular: 2.5
+  pid_ki_linear: 0.02
+  pid_ki_angular: 0.05
+
+mobile_manipulation:
+  full_requires_ros2: false
+  full_requires_nav2: false
+  full_requires_moveit2: false
+  full_requires_kuavo_official_control: false
+  local_fallback_allowed_in_light: true
+  states:
+    - INIT_AND_PATROL
+    - DETECT_AND_CLASSIFY
+    - REACHABILITY_AND_WHOLE_BODY_PLAN
+    - COORDINATED_NAVIGATION
+    - GRASP_CARRY_RELEASE
+    - ERROR_RECOVERY
+
+training:
+  framework: none
+  policy: none
+  data_augmentation: none
+
+scene_objects:
+  - class: recyclable
+    models: [plastic_bottle, aluminum_can]
+  - class: kitchen_waste
+    models: [banana_peel]
+  - class: hazardous
+    models: [battery]
+  - class: other
+    models: [tissue_paper]
+
+trash_bins:
+  - id: bin_recyclable
+    color: [0, 0, 1.0]
+    label: Recyclable
+    position: [0.28, 0.78, 0]
+  - id: bin_kitchen
+    color: [0, 1.0, 0]
+    label: Kitchen Waste
+    position: [0.58, 0.78, 0]
+  - id: bin_hazardous
+    color: [1.0, 0, 0]
+    label: Hazardous
+    position: [0.28, -0.78, 0]
+  - id: bin_other
+    color: [0.3, 0.3, 0.3]
+    label: Other
+    position: [0.58, -0.78, 0]
+
+garbage_categories:
+  recyclable: [plastic_bottle, newspaper, aluminum_can, glass_jar, cardboard, metal_can, plastic_bag]
+  kitchen_waste: [apple_core, banana_peel, food_scrap, vegetable, fruit_peel, egg_shell, bread]
+  hazardous: [battery, medicine, light_bulb, paint_can, pesticide_bottle, expired_drug]
+  other: [tissue, ceramic, cigarette_butt, dirty_packaging, diaper, sanitary_pad]

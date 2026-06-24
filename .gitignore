@@ -21,6 +21,7 @@ kuavo-ros-opensource
 /task_319_garbage_sort/__pycache__/
 /task_319_garbage_sort/**/*.py[cod]
 /backups/task_319_garbage_sort_git_*/
+/backups/robot_git_*/
 /src/nvidia-curobo/
 /third_party/anygrasp_sdk/
 /third_party/graspnetAPI/

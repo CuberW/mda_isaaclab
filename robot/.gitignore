@@ -1,0 +1,102 @@
+# Materials (local reference only)
+materials/
+
+# Python
+__pycache__/
+.robot_stack_tmp/
+*.pyc
+*.egg-info/
+.venv/
+.venv-full/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+logs/
+
+# Large files
+models/*
+!models/README.md
+*.pth
+*.pt
+*.onnx
+data/*
+!data/calib/
+data/calib/*
+!data/calib/README.md
+!data/calib/*.yaml
+!data/eval/
+data/eval/*
+!data/eval/*.yaml
+checkpoints/
+results/
+*.zip
+*.tar.gz
+*.tar
+
+# External mature backend checkouts
+third_party/*
+!third_party/.gitkeep
+
+# Native/CMake build products
+standalone_ik/build/
+standalone_ik/build_local/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.so
+
+# ROS2 workspace generated artifacts
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+!ros2_ws/src/
+
+# Downloaded simulation assets and full upstream checkouts
+simulation/external/*
+!simulation/external/kuavo/
+simulation/external/kuavo/*
+!simulation/external/kuavo/biped_s100045/
+simulation/external/kuavo/biped_s100045/*
+!simulation/external/kuavo/biped_s100045/xml/
+!simulation/external/kuavo/biped_s100045/xml/tabletop_grasp.xml
+simulation/menagerie/*
+!simulation/menagerie/hello_robot_stretch/
+simulation/menagerie/hello_robot_stretch/*
+!simulation/menagerie/hello_robot_stretch/trash_sorting.xml
+simulation/robots/grx_models/
+simulation/robots/kuavo/*
+!simulation/robots/kuavo/src/
+simulation/robots/kuavo/src/*
+!simulation/robots/kuavo/src/kuavo_assets/
+simulation/robots/kuavo/src/kuavo_assets/*
+!simulation/robots/kuavo/src/kuavo_assets/models/
+simulation/robots/kuavo/src/kuavo_assets/models/*
+!simulation/robots/kuavo/src/kuavo_assets/models/biped_s100045/
+simulation/robots/kuavo/src/kuavo_assets/models/biped_s100045/*
+!simulation/robots/kuavo/src/kuavo_assets/models/biped_s100045/xml/
+!simulation/robots/kuavo/src/kuavo_assets/models/biped_s100045/xml/*.xml
+simulation/robots/kuavo_rl/
+simulation/robots/wiki_mjcf/
+
+# Environment
+.env
+*.log
+MUJOCO_LOG.TXT
+
+# Accidental pip output files from malformed specifiers
+=*
+
+# IDE
+.vscode/
+.idea/
+
+# System
+.DS_Store
+Thumbs.db
+scripts/download_models.py
+tasks.txt
+test.txt

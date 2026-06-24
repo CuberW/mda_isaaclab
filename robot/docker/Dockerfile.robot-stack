@@ -1,0 +1,61 @@
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV MUJOCO_GL=egl
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl git git-lfs gnupg lsb-release ca-certificates \
+    build-essential cmake ninja-build pkg-config \
+    python3 python3-pip python3-venv python3-dev \
+    libegl1 libgl1 libglvnd0 libosmesa6 libglew-dev \
+    libopenblas-dev libomp-dev libspatialindex-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ROS2 Humble + MoveIt2 binary packages.
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+      -o /usr/share/keyrings/ros-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" \
+      > /etc/apt/sources.list.d/ros2.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+      ros-humble-ros-base \
+      ros-humble-moveit \
+      ros-humble-moveit-py \
+      ros-humble-xacro \
+      ros-humble-robot-state-publisher \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace/project
+
+RUN python3 -m pip install --upgrade pip setuptools wheel
+
+COPY requirements.txt /tmp/requirements.txt
+RUN python3 -m pip install --no-cache-dir -r /tmp/requirements.txt \
+    && python3 -m pip install --no-cache-dir \
+      torch torchvision --index-url https://download.pytorch.org/whl/cu121 \
+    && python3 -m pip install --no-cache-dir \
+      robosuite gdown huggingface_hub modelscope
+RUN python3 -m pip install --no-cache-dir \
+      trimesh transforms3d pywavefront scikit-image dill h5py cvxopt \
+      autolab-core autolab-perception grasp-nms
+
+# Third-party mature grasp stack. These commands are intentionally separate so
+# build logs make missing upstream compatibility obvious.
+RUN mkdir -p /workspace/third_party \
+    && git clone --depth 1 https://github.com/graspnet/graspnetAPI.git /workspace/third_party/graspnetAPI \
+    && python3 -m pip install --no-cache-dir --no-deps -e /workspace/third_party/graspnetAPI
+
+RUN git clone --depth 1 https://github.com/graspnet/graspnet-baseline.git /workspace/third_party/graspnet-baseline \
+    && cd /workspace/third_party/graspnet-baseline/pointnet2 \
+    && python3 setup.py install \
+    && cd /workspace/third_party/graspnet-baseline/knn \
+    && python3 setup.py install
+
+ENV PYTHONPATH=/workspace/project:/workspace/third_party/graspnet-baseline:/workspace/third_party/graspnetAPI:${PYTHONPATH}
+
+SHELL ["/bin/bash", "-lc"]
+RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc
+
+CMD ["bash"]

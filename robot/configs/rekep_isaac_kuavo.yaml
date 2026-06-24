@@ -1,0 +1,54 @@
+# ReKep + Isaac Sim 5.1 + Kuavo 5-W v62 demo 配置。
+#
+# 在 Isaac 工作站上如果 Kuavo USD 的 prim path 不同，只需要改 articulation_prim_path。
+# 如果留空或找不到，scripts/run_rekep_isaac_kuavo_demo.py 会尝试自动发现名字含
+# kuavo / biped / s62 的 articulation。
+
+kuavo:
+  articulation_prim_path: "/World/Kuavo"
+  right_ee_frame_name: "zarm_r7_end_effector"
+  left_ee_frame_name: "zarm_l7_end_effector"
+  right_arm_joint_names:
+    - zarm_r1_joint
+    - zarm_r2_joint
+    - zarm_r3_joint
+    - zarm_r4_joint
+    - zarm_r5_joint
+    - zarm_r6_joint
+    - zarm_r7_joint
+  left_arm_joint_names:
+    - zarm_l1_joint
+    - zarm_l2_joint
+    - zarm_l3_joint
+    - zarm_l4_joint
+    - zarm_l5_joint
+    - zarm_l6_joint
+    - zarm_l7_joint
+  control_hz: 60.0
+
+ik:
+  backend: "lula"
+  # TODO: 服务器 Isaac 环境里填真实 Lula robot description 和 URDF 路径。
+  # 常见来源：Isaac 导入 Kuavo URDF 后生成的 robot_descriptor.yaml / 原始 biped_s62.urdf。
+  robot_description_path: ""
+  urdf_path: "simulation/robots/kuavo_wheel_s62/urdf/biped_s62.urdf"
+
+constraints:
+  hover_height_m: 0.15
+  grasp_depth_m: 0.0
+  xy_tolerance_m: 0.01
+
+trajectory:
+  min_points: 120
+  total_time_s: 2.5
+
+demo_keypoints:
+  # 这里是世界坐标系下目标物体关键点，实际系统中应由全局相机 + Grounded SAM2 传入。
+  target_obj_keypoints:
+    - [0.60, -0.20, 0.82]
+    - [0.63, -0.20, 0.82]
+    - [0.60, -0.17, 0.82]
+    - [0.63, -0.17, 0.82]
+  container_keypoints:
+    - [0.55, 0.70, 0.75]
+    - [0.65, 0.70, 0.75]

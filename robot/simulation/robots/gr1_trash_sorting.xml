@@ -1,0 +1,3 @@
+<mujoco model="three19_trash_sorting_compat">
+  <include file="../scenes/three19_trash_sorting.xml"/>
+</mujoco>

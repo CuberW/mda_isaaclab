@@ -1,0 +1,206 @@
+<mujoco model="dual_arm_scene">
+  <compiler angle="radian"/>
+
+  <option timestep="0.002" gravity="0 0 -9.81" cone="elliptic" impratio="10" solver="Newton" iterations="100">
+    <flag contact="enable"/>
+  </option>
+
+  <statistic center="0.3 0 0.9" extent="2.0" meansize="0.05"/>
+
+  <visual>
+    <global offwidth="640" offheight="480"/>
+    <headlight diffuse="0.5 0.5 0.5" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <quality shadowsize="2048"/>
+    <rgba haze="0.1 0.2 0.3 1"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.35 0.55 0.75" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+  </asset>
+
+  <worldbody>
+    <!-- Two lights for even illumination -->
+    <light name="overhead" directional="true" pos="0.3 0 3" dir="0 0 -1" diffuse="0.4 0.4 0.4"/>
+    <light name="key" directional="true" pos="0 2 3" dir="0 -0.5 -1" diffuse="0.7 0.7 0.7"/>
+
+    <!-- Floor -->
+    <geom name="floor" type="plane" size="2 2 0.01" material="groundplane"/>
+
+    <!-- Work table -->
+    <body name="table" pos="0.15 0 0">
+      <geom type="box" size="0.3 0.25 0.35" pos="0 0 0.35" rgba="0.55 0.35 0.15 1"/>
+      <geom type="box" size="0.3 0.25 0.006" pos="0 0 0.70" rgba="0.7 0.5 0.3 1"/>
+    </body>
+
+    <!-- Overhead camera -->
+    <body name="cam_mount" pos="0.0 0.75 1.7">
+      <camera name="scene_camera" fovy="70" resolution="640 480" quat="0.00000000 -0.00000000 0.28845087 0.95749470"/>
+    </body>
+
+    <!-- Left arm (7-DoF) -->
+    <body name="l_base" pos="-0.1 0.35 0.35">
+      <geom type="cylinder" size="0.06 0.05" rgba="0.25 0.3 0.4 1"/>
+      <body name="l_link1" pos="0 0 0.08">
+        <joint name="l_j1" type="hinge" axis="0 0 1" range="-2.74 2.74" damping="2.0" armature="0.02"/>
+        <geom type="capsule" size="0.045" fromto="0 0 0 0 0 0.20" rgba="0.35 0.4 0.5 1"/>
+        <body name="l_link2" pos="0 0 0.20">
+          <joint name="l_j2" type="hinge" axis="0 1 0" range="-1.78 1.78" damping="2.0" armature="0.02"/>
+          <geom type="capsule" size="0.04" fromto="0 0 0 0 0 0.25" rgba="0.4 0.45 0.55 1"/>
+          <body name="l_link3" pos="0 0 0.25">
+            <joint name="l_j3" type="hinge" axis="0 0 1" range="-2.90 2.90" damping="2.0" armature="0.02"/>
+            <geom type="capsule" size="0.035" fromto="0 0 0 0 0 0.20" rgba="0.45 0.5 0.6 1"/>
+            <body name="l_link4" pos="0 0 0.20">
+              <joint name="l_j4" type="hinge" axis="0 1 0" range="-3.04 -0.15" damping="2.0" armature="0.02"/>
+              <geom type="capsule" size="0.03" fromto="0 0 0 0 0 0.15" rgba="0.5 0.55 0.65 1"/>
+              <body name="l_link5" pos="0 0 0.15">
+                <joint name="l_j5" type="hinge" axis="0 0 1" range="-2.80 2.80" damping="2.0" armature="0.02"/>
+                <geom type="capsule" size="0.025" fromto="0 0 0 0 0 0.10" rgba="0.55 0.6 0.7 1"/>
+                <body name="l_link6" pos="0 0 0.10">
+                  <joint name="l_j6" type="hinge" axis="0 1 0" range="0.54 4.52" damping="2.0" armature="0.02"/>
+                  <geom type="sphere" size="0.025" rgba="0.6 0.65 0.75 1"/>
+                  <body name="l_link7" pos="0 0 0.04">
+                    <joint name="l_j7" type="hinge" axis="0 0 1" range="-3.01 3.01" damping="2.0" armature="0.02"/>
+                    <geom type="sphere" size="0.02" rgba="0.65 0.7 0.8 1"/>
+                    <body name="l_gripper" pos="0 0 0.04">
+                      <geom name="l_gripper_visual" type="box" size="0.015 0.015 0.03" rgba="0.5 0.55 0.65 1" contype="0" conaffinity="0"/>
+                      <geom name="l_grasp_pad" type="sphere" pos="0 0 0.035" size="0.018" rgba="0.2 0.7 0.9 0.12" contype="0" conaffinity="0"/>
+                      <body name="l_pinch" pos="0 0 0.045">
+                        <site name="l_pinch_site" size="0.01" rgba="0.1 0.8 1 1"/>
+                      </body>
+                      <body name="l_finger_l" pos="0 0.01 0.025">
+                        <joint name="l_grip_l" type="slide" axis="0 1 0" range="-0.015 0.015" damping="0.5" armature="0.005"/>
+                        <geom type="box" size="0.003 0.008 0.02" rgba="0.55 0.6 0.7 1" condim="4" friction="0.95 0.3 0.1" solimp="0.998 0.998 0.001" solref="0.001 1"/>
+                      </body>
+                      <body name="l_finger_r" pos="0 -0.01 0.025">
+                        <joint name="l_grip_r" type="slide" axis="0 1 0" range="-0.015 0.015" damping="0.5" armature="0.005"/>
+                        <geom type="box" size="0.003 0.008 0.02" rgba="0.55 0.6 0.7 1" condim="4" friction="0.95 0.3 0.1" solimp="0.998 0.998 0.001" solref="0.001 1"/>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+
+    <!-- Right arm (7-DoF) -->
+    <body name="r_base" pos="-0.1 -0.35 0.35">
+      <geom type="cylinder" size="0.06 0.05" rgba="0.25 0.3 0.4 1"/>
+      <body name="r_link1" pos="0 0 0.08">
+        <joint name="r_j1" type="hinge" axis="0 0 1" range="-2.74 2.74" damping="2.0" armature="0.02"/>
+        <geom type="capsule" size="0.045" fromto="0 0 0 0 0 0.20" rgba="0.35 0.4 0.5 1"/>
+        <body name="r_link2" pos="0 0 0.20">
+          <joint name="r_j2" type="hinge" axis="0 1 0" range="-1.78 1.78" damping="2.0" armature="0.02"/>
+          <geom type="capsule" size="0.04" fromto="0 0 0 0 0 0.25" rgba="0.4 0.45 0.55 1"/>
+          <body name="r_link3" pos="0 0 0.25">
+            <joint name="r_j3" type="hinge" axis="0 0 1" range="-2.90 2.90" damping="2.0" armature="0.02"/>
+            <geom type="capsule" size="0.035" fromto="0 0 0 0 0 0.20" rgba="0.45 0.5 0.6 1"/>
+            <body name="r_link4" pos="0 0 0.20">
+              <joint name="r_j4" type="hinge" axis="0 1 0" range="-3.04 -0.15" damping="2.0" armature="0.02"/>
+              <geom type="capsule" size="0.03" fromto="0 0 0 0 0 0.15" rgba="0.5 0.55 0.65 1"/>
+              <body name="r_link5" pos="0 0 0.15">
+                <joint name="r_j5" type="hinge" axis="0 0 1" range="-2.80 2.80" damping="2.0" armature="0.02"/>
+                <geom type="capsule" size="0.025" fromto="0 0 0 0 0 0.10" rgba="0.55 0.6 0.7 1"/>
+                <body name="r_link6" pos="0 0 0.10">
+                  <joint name="r_j6" type="hinge" axis="0 1 0" range="0.54 4.52" damping="2.0" armature="0.02"/>
+                  <geom type="sphere" size="0.025" rgba="0.6 0.65 0.75 1"/>
+                  <body name="r_link7" pos="0 0 0.04">
+                    <joint name="r_j7" type="hinge" axis="0 0 1" range="-3.01 3.01" damping="2.0" armature="0.02"/>
+                    <geom type="sphere" size="0.02" rgba="0.65 0.7 0.8 1"/>
+                    <body name="r_gripper" pos="0 0 0.04">
+                      <geom name="r_gripper_visual" type="box" size="0.015 0.015 0.03" rgba="0.5 0.55 0.65 1" contype="0" conaffinity="0"/>
+                      <geom name="r_grasp_pad" type="sphere" pos="0 0 0.035" size="0.018" rgba="0.2 0.7 0.9 0.12" contype="0" conaffinity="0"/>
+                      <body name="r_pinch" pos="0 0 0.045">
+                        <site name="r_pinch_site" size="0.01" rgba="0.1 0.8 1 1"/>
+                      </body>
+                      <body name="r_finger_l" pos="0 0.01 0.025">
+                        <joint name="r_grip_l" type="slide" axis="0 1 0" range="-0.015 0.015" damping="0.5" armature="0.005"/>
+                        <geom type="box" size="0.003 0.008 0.02" rgba="0.55 0.6 0.7 1" condim="4" friction="0.95 0.3 0.1" solimp="0.998 0.998 0.001" solref="0.001 1"/>
+                      </body>
+                      <body name="r_finger_r" pos="0 -0.01 0.025">
+                        <joint name="r_grip_r" type="slide" axis="0 1 0" range="-0.015 0.015" damping="0.5" armature="0.005"/>
+                        <geom type="box" size="0.003 0.008 0.02" rgba="0.55 0.6 0.7 1" condim="4" friction="0.95 0.3 0.1" solimp="0.998 0.998 0.001" solref="0.001 1"/>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+
+    <!-- Objects for dual-arm tasks -->
+    <body name="long_rod" pos="0.01 0 0.73">
+      <freejoint name="rod_joint"/>
+      <geom type="capsule" size="0.02" fromto="0 -0.25 0 0 0.25 0" rgba="0.8 0.6 0.2 1" mass="0.35" condim="4" friction="2.0 0.02 0.001"/>
+    </body>
+    <body name="rod_support" pos="0.01 0 0">
+      <geom name="rod_support_left" type="box" size="0.04 0.018 0.015" pos="0 0.22 0.721" rgba="0.25 0.35 0.45 0.25" contype="0" conaffinity="0"/>
+      <geom name="rod_support_right" type="box" size="0.04 0.018 0.015" pos="0 -0.22 0.721" rgba="0.25 0.35 0.45 0.25" contype="0" conaffinity="0"/>
+    </body>
+    <body name="box_obj" pos="0.36 -0.18 0.766">
+      <freejoint name="box_joint"/>
+      <geom type="box" size="0.08 0.06 0.06" rgba="0.9 0.5 0.2 1" mass="0.3" condim="4" friction="2.0 0.02 0.001"/>
+    </body>
+    <body name="target_region" pos="0.18 0.08 0.714">
+      <geom name="target_region_marker" type="box" size="0.12 0.12 0.004" pos="0 0 -0.004" rgba="0.1 0.75 0.35 0.35" contype="0" conaffinity="0"/>
+      <site name="target_region_site" pos="0 0 0.035" size="0.025" rgba="0.1 0.9 0.45 1"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <!-- Left arm -->
+    <motor name="ml_j1" joint="l_j1" ctrllimited="true" ctrlrange="-80 80"/>
+    <motor name="ml_j2" joint="l_j2" ctrllimited="true" ctrlrange="-80 80"/>
+    <motor name="ml_j3" joint="l_j3" ctrllimited="true" ctrlrange="-80 80"/>
+    <motor name="ml_j4" joint="l_j4" ctrllimited="true" ctrlrange="-80 80"/>
+    <motor name="ml_j5" joint="l_j5" ctrllimited="true" ctrlrange="-80 80"/>
+    <motor name="ml_j6" joint="l_j6" ctrllimited="true" ctrlrange="-80 80"/>
+    <motor name="ml_j7" joint="l_j7" ctrllimited="true" ctrlrange="-80 80"/>
+    <position name="ml_grip" joint="l_grip_l" kp="25" ctrllimited="true" ctrlrange="-0.015 0.015"/>
+    <!-- Right arm -->
+    <motor name="mr_j1" joint="r_j1" ctrllimited="true" ctrlrange="-80 80"/>
+    <motor name="mr_j2" joint="r_j2" ctrllimited="true" ctrlrange="-80 80"/>
+    <motor name="mr_j3" joint="r_j3" ctrllimited="true" ctrlrange="-80 80"/>
+    <motor name="mr_j4" joint="r_j4" ctrllimited="true" ctrlrange="-80 80"/>
+    <motor name="mr_j5" joint="r_j5" ctrllimited="true" ctrlrange="-80 80"/>
+    <motor name="mr_j6" joint="r_j6" ctrllimited="true" ctrlrange="-80 80"/>
+    <motor name="mr_j7" joint="r_j7" ctrllimited="true" ctrlrange="-80 80"/>
+    <position name="mr_grip" joint="r_grip_l" kp="25" ctrllimited="true" ctrlrange="-0.015 0.015"/>
+  </actuator>
+
+  <!-- Grip sync: left+right fingers move together -->
+  <equality>
+    <joint name="l_grip_sync" joint1="l_grip_l" joint2="l_grip_r" polycoef="0 -1 0 0 0"/>
+    <joint name="r_grip_sync" joint1="r_grip_l" joint2="r_grip_r" polycoef="0 -1 0 0 0"/>
+  </equality>
+
+  <!-- Grasp weld constraints (initially inactive, activated at runtime) -->
+  <equality>
+    <weld name="grasp_left" body1="l_pinch" body2="long_rod"
+          active="false" torquescale="50" solref="0.001 1" solimp="0.999 0.999 0.001"/>
+    <weld name="grasp_right" body1="r_pinch" body2="long_rod"
+          active="false" torquescale="50" solref="0.001 1" solimp="0.999 0.999 0.001"/>
+  </equality>
+
+  <!-- Exclude arm-arm self-collisions for dual-arm stability -->
+  <contact>
+    <exclude name="arm_arm" body1="l_link1" body2="r_link1"/>
+    <exclude name="l_base_link1" body1="l_base" body2="l_link1"/>
+    <exclude name="r_base_link1" body1="r_base" body2="r_link1"/>
+    <exclude name="l_gripper_link2" body1="l_gripper" body2="l_link2"/>
+    <exclude name="l_gripper_link5" body1="l_gripper" body2="l_link5"/>
+    <exclude name="l_gripper_link7" body1="l_gripper" body2="l_link7"/>
+    <exclude name="l_link6_link7" body1="l_link6" body2="l_link7"/>
+    <exclude name="r_gripper_link2" body1="r_gripper" body2="r_link2"/>
+    <exclude name="r_gripper_link5" body1="r_gripper" body2="r_link5"/>
+    <exclude name="r_gripper_link7" body1="r_gripper" body2="r_link7"/>
+    <exclude name="r_link6_link7" body1="r_link6" body2="r_link7"/>
+  </contact>
+</mujoco>

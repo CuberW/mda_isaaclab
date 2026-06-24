@@ -1,0 +1,29 @@
+architecture:
+  style: perception-planning-control
+  compatibility_layer: robot_common
+
+perception:
+  depth_localization:
+    fallback_fx_px: 500.0
+    fallback_fy_px: 500.0
+    median_outlier_abs_m: 0.03
+    median_outlier_rel: 0.08
+
+planning:
+  moveit2:
+    planner_id: RRTConnectkConfigDefault
+    default_velocity_scale: 0.35
+    default_acceleration_scale: 0.35
+  navigation:
+    stretch_goal_tolerance_m: 0.08
+    stretch_yaw_tolerance_rad: 0.16
+
+control:
+  dual_arm_wbc:
+    source: dual_arm_wbc_qp_torque
+    max_sync_error_m: 0.02
+    max_tilt_deg: 5.0
+  grasp_contact:
+    require_real_finger_contact: true
+    forbid_large_proxy_success: true
+

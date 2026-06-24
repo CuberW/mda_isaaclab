@@ -1,0 +1,27 @@
+services:
+  robot-stack:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.robot-stack
+    image: robot-stack:humble-cu121
+    working_dir: /workspace/project
+    environment:
+      MUJOCO_GL: ${MUJOCO_GL:-egl}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
+      PYTHONPATH: /workspace/project:/workspace/project/third_party/graspnet-baseline:/workspace/project/third_party/graspnetAPI
+      DISPLAY: ${DISPLAY:-}
+    volumes:
+      - ..:/workspace/project
+      - ../models:/workspace/project/models
+      - ../results:/workspace/project/results
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    stdin_open: true
+    tty: true

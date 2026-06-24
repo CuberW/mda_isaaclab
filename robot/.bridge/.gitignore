@@ -1,0 +1,3 @@
+# Bridge files are runtime artifacts — never commit
+*.json
+*.tmp
