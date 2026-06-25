@@ -13565,6 +13565,17 @@ def write_rigid_object_pose(
     obj.write_root_velocity_to_sim(root_state[:, 7:])
 
 
+_MIND_SORT_GRIPPER_CARRY_ATTACHMENTS: dict[str, dict[str, Any]] = {}
+
+
+def yaw_from_rotation_matrix_xy(rot: np.ndarray, fallback_yaw: float = 0.0) -> float:
+    rot = np.asarray(rot, dtype=np.float32).reshape(3, 3)
+    x_axis = rot[:2, 0]
+    if float(np.linalg.norm(x_axis)) < 1.0e-5:
+        return float(fallback_yaw)
+    return float(math.atan2(float(x_axis[1]), float(x_axis[0])))
+
+
 def mind_sort_carried_pose(robot: Articulation) -> tuple[tuple[float, float, float], float]:
     root = robot.data.root_state_w[0].detach().cpu()
     yaw = yaw_from_quat_wxyz(root[3:7])
@@ -13576,10 +13587,45 @@ def mind_sort_carried_pose(robot: Articulation) -> tuple[tuple[float, float, flo
     return (x, y, z), yaw
 
 
+def mind_sort_gripper_carried_pose(
+    scene: InteractiveScene,
+    robot: Articulation,
+    scene_key: str | None,
+) -> tuple[tuple[float, float, float], float, dict[str, Any]]:
+    if not scene_key:
+        pos_w, yaw = mind_sort_carried_pose(robot)
+        return pos_w, yaw, {"mode": "legacy_robot_root_offset", "reason": "missing_scene_key"}
+    attachment = _MIND_SORT_GRIPPER_CARRY_ATTACHMENTS.get(scene_key)
+    if not attachment:
+        pos_w, yaw = mind_sort_carried_pose(robot)
+        return pos_w, yaw, {"mode": "legacy_robot_root_offset", "reason": "no_gripper_attachment"}
+    try:
+        ee_body_id = int(attachment.get("right_ee_body_id") or resolve_right_ee_body_id(scene))
+        tcp_pose_w = tcp_pose_matrix(robot, ee_body_id).astype(np.float32)
+        offset_tcp = np.asarray(attachment.get("object_root_offset_tcp_m", [0.0, 0.0, -0.03]), dtype=np.float32).reshape(3)
+        pos_w = tcp_pose_w[:3, 3] + tcp_pose_w[:3, :3] @ offset_tcp
+        robot_yaw = yaw_from_quat_wxyz(robot.data.root_state_w[0, 3:7].detach().cpu())
+        yaw = yaw_from_rotation_matrix_xy(tcp_pose_w[:3, :3], fallback_yaw=robot_yaw)
+        return (
+            (float(pos_w[0]), float(pos_w[1]), float(pos_w[2])),
+            float(yaw),
+            {
+                "mode": "right_gripper_tcp_attachment",
+                "right_ee_body_id": ee_body_id,
+                "tcp_world_m": tcp_pose_w[:3, 3].astype(float).tolist(),
+                "object_root_offset_tcp_m": offset_tcp.astype(float).tolist(),
+                "attachment_source": attachment.get("source", ""),
+            },
+        )
+    except Exception as exc:
+        pos_w, yaw = mind_sort_carried_pose(robot)
+        return pos_w, yaw, {"mode": "legacy_robot_root_offset", "reason": f"gripper_attachment_failed:{exc!r}"}
+
+
 def mind_sort_update_carried_object(scene: InteractiveScene, robot: Articulation, scene_key: str | None) -> None:
     if not scene_key or scene_key not in scene.keys():
         return
-    pos_w, yaw = mind_sort_carried_pose(robot)
+    pos_w, yaw, _ = mind_sort_gripper_carried_pose(scene, robot, scene_key)
     write_rigid_object_pose(scene, scene_key, pos_w, yaw)
 
 
@@ -13790,8 +13836,8 @@ def mind_sort_suction_assist_attach(
         "success": False,
         "suction_assisted": False,
         "gripper_proximity_assisted": False,
-            "mode": "gripper_proximity_assisted_pickup",
-            "policy": "if_final_gripper_or_object_distance_within_threshold_then_carry",
+        "mode": "gripper_proximity_assisted_pickup",
+        "policy": "if_final_gripper_or_object_distance_within_threshold_then_carry",
         "legacy_suction_alias": legacy_suction_mode,
         "scene_key": scene_key,
         "target": target_candidate_record(target),
@@ -13835,6 +13881,17 @@ def mind_sort_suction_assist_attach(
             return None
         return point.astype(np.float32)
 
+    def pose4(value: Any) -> np.ndarray | None:
+        if value is None:
+            return None
+        try:
+            arr = np.asarray(value, dtype=np.float32)
+        except Exception:
+            return None
+        if arr.shape != (4, 4) or not np.isfinite(arr).all():
+            return None
+        return arr.astype(np.float32)
+
     def iter_physical_records(record: dict[str, Any] | None) -> Iterable[tuple[str, dict[str, Any]]]:
         if not isinstance(record, dict):
             return
@@ -13852,6 +13909,7 @@ def mind_sort_suction_assist_attach(
     tcp_points: list[tuple[str, np.ndarray]] = []
     if tcp_pos is not None:
         tcp_points.append(("current_tcp_after_failure", tcp_pos.astype(np.float32)))
+    low_grasp_tcp_pose_candidates: list[tuple[str, np.ndarray]] = []
 
     for record_label, record in iter_physical_records(physical_grasp):
         top_target = point3((record.get("top_grasp") or {}).get("target_world_m"))
@@ -13863,6 +13921,9 @@ def mind_sort_suction_assist_attach(
         tcp_after_grasp = point3(record.get("tcp_pose_after_grasp_world"))
         if tcp_after_grasp is not None:
             tcp_points.append((f"{record_label}.tcp_after_grasp", tcp_after_grasp))
+        tcp_after_grasp_pose = pose4(record.get("tcp_pose_after_grasp_world"))
+        if tcp_after_grasp_pose is not None:
+            low_grasp_tcp_pose_candidates.append((f"{record_label}.tcp_pose_after_grasp_world", tcp_after_grasp_pose))
         segments = record.get("segments", [])
         if not isinstance(segments, list):
             continue
@@ -13932,13 +13993,52 @@ def mind_sort_suction_assist_attach(
     sim_dt = sim.get_physics_dt()
     steps = max(1, assist_steps if assist_steps > 0 else int(args_cli.grasp_steps))
     start_pos = object_pos.copy()
+    locked_joint_target.copy_(robot.data.joint_pos.clone())
+    current_tcp_pose = None
+    if ee_body_id is not None:
+        try:
+            current_tcp_pose = tcp_pose_matrix(robot, int(ee_body_id)).astype(np.float32)
+        except Exception:
+            current_tcp_pose = None
+    reference_label = "current_tcp_after_failure"
+    reference_tcp_pose = current_tcp_pose
+    if low_grasp_tcp_pose_candidates:
+        reference_label, reference_tcp_pose = low_grasp_tcp_pose_candidates[0]
+    attachment_reason = "object_root_relative_to_low_grasp_tcp_pose"
+    if reference_tcp_pose is not None:
+        offset_tcp = reference_tcp_pose[:3, :3].T @ (object_pos - reference_tcp_pose[:3, 3])
+        if float(np.linalg.norm(offset_tcp)) > 0.12 and closest_target is not None:
+            offset_tcp = reference_tcp_pose[:3, :3].T @ (object_pos - closest_target.astype(np.float32))
+            attachment_reason = "object_root_relative_to_closest_low_grasp_target"
+        if float(np.linalg.norm(offset_tcp)) > 0.12:
+            offset_tcp = np.array([0.0, 0.0, -0.035], dtype=np.float32)
+            attachment_reason = "fallback_small_tcp_local_offset"
+    else:
+        offset_tcp = np.array([0.0, 0.0, -0.035], dtype=np.float32)
+        attachment_reason = "fallback_no_tcp_pose_available"
+    _MIND_SORT_GRIPPER_CARRY_ATTACHMENTS[scene_key] = {
+        "right_ee_body_id": ee_body_id,
+        "object_root_offset_tcp_m": offset_tcp.astype(float).tolist(),
+        "source": reference_label,
+        "reason": attachment_reason,
+        "closest_gripper_proximity_source": closest_source,
+        "closest_gripper_proximity_distance_m": closest_distance,
+    }
+    _, _, initial_carry_pose_meta = mind_sort_gripper_carried_pose(scene, robot, scene_key)
+    meta["gripper_attachment"] = {
+        "mode": "right_gripper_tcp_attachment",
+        "right_ee_body_id": ee_body_id,
+        "reference_tcp_pose_source": reference_label,
+        "object_root_offset_tcp_m": offset_tcp.astype(float).tolist(),
+        "reason": attachment_reason,
+        "initial_carried_pose": initial_carry_pose_meta,
+    }
     for step in range(steps):
         alpha = float(step + 1) / float(steps)
-        carried_pos, carried_yaw = mind_sort_carried_pose(robot)
+        carried_pos, carried_yaw, carried_pose_meta = mind_sort_gripper_carried_pose(scene, robot, scene_key)
         carried = np.asarray(carried_pos, dtype=np.float32)
         ease = 0.5 - 0.5 * math.cos(math.pi * alpha)
-        lift_bias = np.array([0.0, 0.0, 0.10 * math.sin(math.pi * min(alpha, 1.0))], dtype=np.float32)
-        pos = (1.0 - ease) * start_pos + ease * carried + lift_bias
+        pos = (1.0 - ease) * start_pos + ease * carried
         hold_non_wheel_joints(robot, locked_joint_target, wheel_ids)
         apply_wheel_velocity(robot, wheel_ids, 0.0, 0.0, sim_dt)
         gripper.close()
@@ -13961,6 +14061,7 @@ def mind_sort_suction_assist_attach(
             "reason": "Physical gripper lift verification failed, but the gripper reached the object within the proximity threshold; continuing with gripper-proximity assisted pickup.",
             "steps": steps,
             "carried_pose_world": final_pos.astype(float).tolist(),
+            "final_carried_pose": carried_pose_meta,
             "report_label": "gripper proximity assisted pickup",
         }
     )
@@ -13980,6 +14081,7 @@ def mind_sort_drop_object(
 ) -> dict[str, Any]:
     tracker.enter("MIND_DROP_RELEASE", scene_key=scene_key, category=category)
     sim_dt = sim.get_physics_dt()
+    released_attachment = _MIND_SORT_GRIPPER_CARRY_ATTACHMENTS.pop(scene_key, None)
     bin_y = bin_y_for_category(category)
     drop_pos = (3.03, bin_y, 0.98)
     write_rigid_object_pose(scene, scene_key, drop_pos, math.pi)
@@ -14001,6 +14103,7 @@ def mind_sort_drop_object(
         "target_bin_name": BIN_NAME_BY_CATEGORY.get(category, "other"),
         "drop_pose_world": [float(v) for v in drop_pos],
         "final_pose_world": final_pos,
+        "released_gripper_attachment": released_attachment,
     }
 
 
@@ -15298,6 +15401,8 @@ def run_mind_sort_demo(sim: SimulationContext, scene: InteractiveScene, run_dir:
             "max_distance_m": float(args_cli.mind_sort_gripper_proximity_assist_max_distance_m),
             "steps": int(args_cli.mind_sort_gripper_proximity_assist_steps) if int(args_cli.mind_sort_gripper_proximity_assist_steps) > 0 else int(args_cli.grasp_steps),
             "report_label": "gripper proximity assisted pickup",
+            "carry_frame": "right_gripper_tcp",
+            "visual_policy": "object_root_keeps_low_grasp_tcp_local_offset_so_it_appears_inside_the_closed_gripper",
         },
         "suction_assist": {
             "enabled": bool(args_cli.mind_sort_suction_assist),
@@ -15313,7 +15418,7 @@ def run_mind_sort_demo(sim: SimulationContext, scene: InteractiveScene, run_dir:
         "bin_staging_pose": [float(v) for v in waypoint_pose("bin_center")],
         "max_objects": int(args_cli.mind_sort_max_objects),
         "settle_steps": int(args_cli.mind_sort_settle_steps),
-        "attach_offset": {
+        "legacy_simulated_pick_attach_offset": {
             "forward_m": float(args_cli.mind_sort_attach_forward_m),
             "lateral_m": float(args_cli.mind_sort_attach_lateral_m),
             "height_world_m": float(args_cli.mind_sort_attach_height_m),

@@ -42,6 +42,13 @@ Change:
   final TCP from the Cartesian descent segment. This prevents the later retreat
   pose from incorrectly rejecting a grasp that reached the object within the
   2 cm demo threshold.
+- Follow-up clarification: gripper-proximity carry now attaches the object to
+  the actual right-gripper TCP frame rather than the old robot-root
+  forward/lateral/height carry point. When the 2 cm gate passes, the object root
+  preserves its local offset from the low-grasp TCP pose, then follows the
+  gripper during bin navigation so it appears clamped inside the closed gripper
+  instead of floating beside the robot. Drop release clears this gripper
+  attachment before placing the object in the bin.
 - Dynamic table-standpoint navigation now treats `SUCCEEDED_FINAL_DOCK_PARTIAL`
   as a soft Nav2 success and lets the existing pre-grasp standpoint error gate
   decide whether the robot is close enough to continue. This avoids aborting
