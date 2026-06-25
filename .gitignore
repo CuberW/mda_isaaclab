@@ -27,5 +27,15 @@ kuavo-ros-opensource
 /third_party/graspnetAPI/
 /third_party/graspnet-baseline/
 /third_party/ReKep/
+/task319_local_grasp_rl/__pycache__/
+/task319_local_grasp_rl/**/*.py[cod]
+/task319_local_grasp_rl/wandb.sh
+/qwen_s.sh
+/task319_hover_descent_grasp/
+/task319_hover_descent_grasp_sac/
+/task319_local_suction_grasp/
+/logs/
+/outputs/
+/wandb/
 
 duarm

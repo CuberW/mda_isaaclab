@@ -9,6 +9,8 @@ cd /home/zhxm/workspace/mda_isaaclab
 Documentation rule:
 - Every task-319 code change should update `task_319_garbage_sort/CHANGELOG.md`.
 - Any visible behavior change should also add or update the launch/display command in this file.
+- Repository-level setup and current status are summarized in `README.md`.
+- The detailed Chinese development report is `TASK319_DEVELOPMENT_REPORT.md`.
 
 ## 1. Visual Scene Preview: robot + table + 10 textured YCB trash objects
 
@@ -73,11 +75,17 @@ Selection policy:
 - For RGB-D centroid fallback, reachability is checked at the same RGB-D geometric center used by the grasp command. Extra object-edge/top probe points are disabled by default and can be restored only for diagnostics with `--no-target_reachability_center_only`.
 - Valid candidates are ranked by weighted score: planner group, IK cost, distance, clutter, depth point quality, VLM confidence, and recent failed-grasp memory.
 - After a successful grasp and drop, `--enable_sort_nav` returns the robot to the home table-front pose through the bin staging and side-corridor waypoints.
-- In the current `--mind_sort_demo` physical-grasp mainline, a failed real
-  gripper lift stops that object and writes diagnostics. The legacy
-  `--mind_sort_gripper_proximity_assist` attach path is diagnostic-only,
-  disabled by default, and must not be used for physical-grasp validation.
-- Right-arm motion defaults to `local_position_primitive`: a staged RGB-D-center TCP grasp with nominal angled-top-down wrist geometry, position-only safe/pregrasp/descent/lift tracking, residual TCP feedback correction, slow gripper closure, and contact verification before lift. Wrist axes are not hard constraints unless `--arm_motion_enforce_wrist_orientation` is explicitly enabled. `curobo_right_arm` remains available only as an explicit diagnostic/research backend.
+- In the current `--mind_sort_demo` runtime profile, the state machine first
+  attempts physical right-gripper grasp/lift. If physical lift verification
+  fails but the final low-grasp TCP reached the object within the 2 cm gate,
+  `--mind_sort_gripper_proximity_assist` is auto-enabled and the object is
+  carried in the right-gripper TCP frame for demo continuity. Strict physical
+  validation must pass `--no-mind_sort_gripper_proximity_assist`.
+- In the current `--mind_sort_demo` runtime profile, right-arm motion is
+  switched to `curobo_right_arm` unless the command explicitly overrides
+  `--arm_motion_backend`. The older `local_position_primitive` can still be
+  forced for the 20260624 stable debug-cube profile with
+  `--mind_sort_force_stable_grasp_profile`.
 
 API setup, in the same shell before launching:
 
@@ -105,10 +113,37 @@ GUI full-chain test: v28 original perception -> RGB-D centroid grasp -> Nav2 to 
 /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --enable_sort_nav --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 150 --post_action_hold_steps 1200
 ```
 
-Current default mind-sort loop command, using formal v28/Qwen perception and the stable RGB-D-center local position grasp primitive:
+Current default mind-sort loop command, using formal v28/Qwen perception,
+dynamic RGB-D station planning, Nav2, cuRobo right-arm motion, and the 2 cm
+gripper-proximity continuation policy:
 
 ```bash
 /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
+```
+
+Strict physical-grasp validation disables the demo carry gate:
+
+```bash
+/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo --no-mind_sort_gripper_proximity_assist
+```
+
+Latest full-loop video demonstration command. This uses the legacy suction flag
+as an alias for the gripper-proximity carry path and is for complete sorting
+video evidence, not physical-gripper acceptance:
+
+```bash
+/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py \
+  --headless \
+  --mind_sort_demo \
+  --mind_sort_suction_assist \
+  --no-mind_sort_gripper_proximity_assist \
+  --mind_sort_allow_stale_reshoot_for_suction_demo \
+  --no-target_reachability_ik_check \
+  --record_video \
+  --video_width 1280 \
+  --video_height 720 \
+  --video_sample_stride 4 \
+  --no-gui_realtime_playback
 ```
 
 Headless record/debug variant:
@@ -228,19 +263,27 @@ Result summary:
 - Video:
   `task_319_garbage_sort/output/head_camera_grasp_records/20260624_131837/external_grasp_demo.mp4`.
 
-## 4B. Current v28/Nav2 Mind-Sort Mainline With Real Physical Grasp
+## 4B. Current v28/Nav2 Mind-Sort Mainline
 
 This keeps the v28/VISS perception and Nav2 dynamic-standpoint loop, and tries
-the real right-gripper grasp/lift before bin navigation. Simulated mind-pick is
-not a fallback. It is available only when explicitly requested with
-`--mind_sort_simulated_pick`, and should not be used for physical grasp
+the real right-gripper grasp/lift before bin navigation. The default runtime
+also enables the 2 cm gripper-proximity carry continuation, so a full-loop demo
+can continue if the gripper reached the object but lift verification failed.
+Use `--no-mind_sort_gripper_proximity_assist` for strict physical-grasp
 validation.
 
-Headless physical-grasp command:
+GUI mainline command:
 
 ```bash
 cd /home/zhxm/workspace/mda_isaaclab
 /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
+```
+
+Strict physical-grasp command:
+
+```bash
+cd /home/zhxm/workspace/mda_isaaclab
+/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo --no-mind_sort_gripper_proximity_assist
 ```
 
 Explicit navigation-display command without physical grasp:
@@ -263,10 +306,13 @@ Expected debug files:
 
 Current diagnostic status:
 - The physical state is wired into the loop and records video/metadata.
-- The latest diagnostic run reached physical grasp execution but failed at
-  `SAFE_START lift-current TCP error exceeded threshold`; the measured Nav2
-  final standpoint error was about `0.149 m`, so base-stop accuracy must be
-  tightened before treating arm IK failures as pure arm-control failures.
+- The latest complete demo run is
+  `task_319_garbage_sort/output/head_camera_grasp_records/20260625_150100`.
+  It sorted 8 objects with `object_teleport_used=false` at drop time, then
+  stopped on a final return-to-observe Nav2 `STATUS_6`.
+- Real physical gripper pickup remains the main open issue. SAC training in
+  `task319_local_grasp_rl/` is intended to replace the open-loop final descent,
+  close, and lift stage.
 
 ## 4. Retired Legacy Strict Visual Grasp: YOLO + GLM-VLM
 

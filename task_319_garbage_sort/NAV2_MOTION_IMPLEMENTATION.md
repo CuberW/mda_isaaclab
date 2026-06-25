@@ -1,6 +1,6 @@
 # Task 319 Nav2 Motion Implementation Notes
 
-Last updated: 2026-06-24
+Last updated: 2026-06-25
 
 This document is the running source of truth for the mobile-base/navigation part
 of Task 319. Future changes to navigation, standpoints, Nav2 parameters, bridge
@@ -8,17 +8,22 @@ interfaces, or motion-only validation results should update this file.
 
 ## Current Status
 
-- Visual perception and grasp inference are paused for the motion-only validation path.
+- Motion-only validation remains available, but the active full-task path is
+  `--mind_sort_demo`: VISS v28/Qwen perception, dynamic RGB-D standpoint
+  planning, Nav2 navigation, right-gripper grasp attempt, bin-side navigation,
+  and gripper-to-bin release.
 - The formal visual-grasp path now defaults to dynamic RGB-D table-side station
   planning with `--dynamic_grasp_standpoint_nav`. It evaluates all valid visual
   targets, computes a continuous table-side robot pose from each target's RGB-D
   world center, then re-shoots RGB-D after Nav2 reaches the selected station.
   The older preset planner remains as fallback.
 - Navigation uses ROS 2 Nav2, not a handwritten path follower.
-- `--mind_sort_demo` is now available as the temporary full sorting flow while
-  grasp training/debugging continues. It uses real v28/VISS perception and Nav2
-  navigation, but simulates grasp success by attaching the selected rigid object
-  to the robot during bin navigation and releasing it above the target bin.
+- `--mind_sort_demo` uses real v28/VISS perception and Nav2 navigation. It
+  first attempts physical right-gripper grasp/lift; by default, the demo also
+  enables the 2 cm gripper-proximity carry continuation so the full sorting
+  loop can proceed when the gripper reached the object but lift verification is
+  still unreliable. Strict physical-grasp validation must pass
+  `--no-mind_sort_gripper_proximity_assist`.
 - Mind-sort recording should use the global high observer view by default:
   `observer_camera_pos=(2.15, 4.65, 3.10)`,
   `observer_camera_target=(2.05, 0.0, 0.62)`. Demo videos should run with
@@ -27,12 +32,20 @@ interfaces, or motion-only validation results should update this file.
   to the backed-off observation pose with `RETURN_TO_OBSERVE_BACKOFF`; the next
   cycle then re-runs perception from that pose. This keeps the delivered video
   aligned with the intended observe -> plan -> sort -> observe loop.
-- Because the current wheel adapter can report Nav2 success with about
-  `0.15 m` / `0.32 rad` residual error, `--mind_sort_snap_observe_pose` is on by
-  default for this demo. It only corrects the simulated base at the observation
-  capture pose so the RGB-D frame contains the full table for the next target
-  selection.
-- Latest mind-sort validation:
+- Latest full mind-sort validation:
+  - run directory:
+    `task_319_garbage_sort/output/head_camera_grasp_records/20260625_150100`
+  - video:
+    `task_319_garbage_sort/output/head_camera_grasp_records/20260625_150100/external_grasp_demo.mp4`
+  - completed scene keys:
+    `trash_00`, `trash_01`, `trash_02`, `trash_04`, `trash_05`, `trash_06`,
+    `trash_07`, `trash_08`
+  - failed scene keys: none
+  - drop policy: right gripper TCP moves over the selected bin opening before
+    release; per-cycle metadata records `object_teleport_used=false`
+  - final result: stopped on return-to-observe `STATUS_6` after the completed
+    object cycles
+- Earlier mind-sort validation:
   - run directory:
     `task_319_garbage_sort/output/head_camera_grasp_records/20260624_001406`
   - selected object: `trash_05 / trash_potted_meat_can_0`

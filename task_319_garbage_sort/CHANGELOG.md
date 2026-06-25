@@ -2,6 +2,111 @@
 
 All implementation changes for this task should be documented here together with the command that demonstrates the changed behavior.
 
+## 2026-06-25: Add repository README and Task319 development report
+
+Change:
+- Added root `README.md` with setup, Qwen/DashScope configuration, main
+  Task319 launch commands, demo/strict-grasp distinction, output locations, and
+  SAC/PPO training commands.
+- Added root `TASK319_DEVELOPMENT_REPORT.md`, a Chinese module-by-module report
+  of the current mainline, development issues, solutions, latest validation
+  status, and follow-up plan.
+- Updated `DEMO_COMMANDS.md`, `NAV2_MOTION_IMPLEMENTATION.md`, and
+  `task319_local_grasp_rl/README.md` to align with the current v28/Qwen,
+  Nav2, gripper-proximity demo, and SAC-training status.
+- Added `task319_local_grasp_rl/wandb.example.sh` and ignored local W&B secrets,
+  logs, caches, and generated training outputs.
+
+Validation:
+- Documentation-only change. Checked command snippets and scanned docs for
+  accidental API-key/token patterns.
+
+## 2026-06-25: Redesign local RL task for 3.19 hover-to-grasp descent
+
+Change:
+- Reworked `task319_local_grasp_rl` from the earlier suction-style local
+  attachment prototype into the 3.19 final-stage control task: the main stack
+  is expected to reach a hover pose, then the policy performs local TCP
+  correction, final descent, physical gripper close, and lift.
+- Added the new default Gym id
+  `Task319-Hover-Descent-Grasp-Kuavo-Direct-v0`; the old
+  `Task319-Local-Suction-Grasp-Kuavo-Direct-v0` id remains as a compatibility
+  alias.
+- Actor observations now use deployable inputs for the mainline: RGB-D-style
+  estimated grasp target relative to the gripper TCP, TCP velocity, right-arm
+  joint state, gripper opening/close command, heights, and previous action.
+  Simulator-only object root pose and object velocity are no longer fed to the
+  policy.
+- The controlled point is now the gripper TCP derived from the two-finger
+  gripper URDF local TCP offset, not the `gripper_base` body origin.
+- Removed suction/attachment success from the environment dynamics. The fourth
+  action dimension is now a continuous physical gripper close command.
+- Redesigned rewards around the hover-descent behavior: XY/Z alignment to
+  `Z_max - grasp_depth`, closing only near the target, physical object lift,
+  early-close penalty, object-push penalty, table-contact penalty, and action
+  penalty.
+- Logs and checkpoints now go under `logs/skrl/task319_hover_descent_grasp/`.
+
+Validation:
+- Static compile passed:
+  `python -m py_compile task319_local_grasp_rl/local_suction_grasp_env.py task319_local_grasp_rl/train.py task319_local_grasp_rl/play.py task319_local_grasp_rl/__init__.py`
+- IsaacLab/skrl smoke training passed:
+  `/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task319_local_grasp_rl/train.py --task319_quick_test --headless`
+- Full training command:
+  `/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task319_local_grasp_rl/train.py --headless --num_envs 256 --max_iterations 1500 --wandb`
+
+## 2026-06-25: Move gripper over bin before release instead of teleporting object
+
+Change:
+- Reworked the `--mind_sort_demo` drop stage so the selected object is no
+  longer directly written to the hardcoded bin release pose after navigation.
+- Added a right-gripper TCP bin-release motion before opening the gripper. The
+  TCP target is computed from the selected waste category's bin opening and,
+  for gripper-proximity carry, the preserved object-root offset in the
+  right-gripper TCP frame.
+- Added per-step carry hooks to the generic IK segment runner so a gripper-
+  attached object follows the right TCP while the arm moves from the bin
+  navigation pose to the bin opening.
+- Both physical gripper release and gripper-proximity assisted release now use
+  the same policy: move the right TCP over the selected bin opening, then open
+  the gripper. Metadata records `gripper_to_bin_motion` and
+  `object_teleport_used: false`.
+
+Validation:
+- Static compile passed:
+  `python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py`
+- Full visual validation command:
+  `/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo`
+
+## 2026-06-25: Add standalone IsaacLab skrl PPO local grasp training environment
+
+Change:
+- Added `task319_local_grasp_rl/` as a standalone Gym-registered IsaacLab
+  DirectRLEnv package for the Task319 final-stage grasp problem.
+- Registered `Task319-Local-Suction-Grasp-Kuavo-Direct-v0` without modifying
+  upstream `isaaclab_tasks`.
+- The environment uses the existing generated Kuavo S62 + right two-finger
+  gripper URDF, a tabletop, and a movable box object.
+- The policy is intentionally scoped to the last 10-15 cm: observation is a
+  low-dimensional local state, action is `dx, dy, dz, attach`, and the internal
+  controller converts TCP deltas to right-arm joint targets with damped
+  least-squares Jacobian control.
+- Added skrl PPO config at `task319_local_grasp_rl/agents/skrl_ppo_cfg.yaml`.
+- Added W&B support in `task319_local_grasp_rl/train.py`; it is off by default
+  and enabled with `--wandb` after setting `WANDB_API_KEY`,
+  `WANDB_ENTITY`, and `WANDB_PROJECT`.
+- Added `task319_local_grasp_rl/README.md` with train/play commands and the
+  intended integration path back into the V28/Nav2/cuRobo mainline.
+
+Validation:
+- Static compile passed for the new package.
+- Quick IsaacLab/skrl smoke training passed:
+  `/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task319_local_grasp_rl/train.py --task319_quick_test --headless`
+- Smoke run wrote checkpoints under
+  `logs/skrl/task319_local_suction_grasp/2026-06-25_12-29-29_ppo_torch/checkpoints/`.
+- Checkpoint replay smoke test passed:
+  `/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task319_local_grasp_rl/play.py --headless --checkpoint logs/skrl/task319_local_suction_grasp/2026-06-25_12-29-29_ppo_torch/checkpoints/agent_30.pt --num_envs 2 --steps 5`
+
 ## 2026-06-25: Add directionless max-open envelope grasp for the v28 mainline
 
 Change:
@@ -47,8 +152,9 @@ Change:
   forward/lateral/height carry point. When the 2 cm gate passes, the object root
   preserves its local offset from the low-grasp TCP pose, then follows the
   gripper during bin navigation so it appears clamped inside the closed gripper
-  instead of floating beside the robot. Drop release clears this gripper
-  attachment before placing the object in the bin.
+  instead of floating beside the robot. Drop release now moves the right
+  gripper TCP over the selected bin opening before clearing the attachment and
+  opening the gripper.
 - Bin release now explicitly uses the four hard-coded bin openings: recycle
   y=-0.72, kitchen y=-0.24, hazard y=0.24, other y=0.72. Before opening the
   gripper, the mind-sort drop state aligns the carried object to the selected
