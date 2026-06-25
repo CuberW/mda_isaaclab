@@ -49,6 +49,11 @@ Change:
   gripper during bin navigation so it appears clamped inside the closed gripper
   instead of floating beside the robot. Drop release clears this gripper
   attachment before placing the object in the bin.
+- Bin release now explicitly uses the four hard-coded bin openings: recycle
+  y=-0.72, kitchen y=-0.24, hazard y=0.24, other y=0.72. Before opening the
+  gripper, the mind-sort drop state aligns the carried object to the selected
+  bin opening and records the category/bin/drop-pose mapping plus TCP/bin
+  alignment diagnostics in metadata.
 - Dynamic table-standpoint navigation now treats `SUCCEEDED_FINAL_DOCK_PARTIAL`
   as a soft Nav2 success and lets the existing pre-grasp standpoint error gate
   decide whether the robot is close enough to continue. This avoids aborting

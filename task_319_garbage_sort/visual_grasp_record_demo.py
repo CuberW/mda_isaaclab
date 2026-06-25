@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Sequence
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -1117,6 +1117,10 @@ SIDE_CORRIDOR_Y = 1.35
 TABLE_SIDE_X = 1.80
 BIN_DRIVE_X = 3.75
 BIN_STAGING_POSE = (BIN_DRIVE_X, 0.0, math.pi)
+BIN_DROP_X = 3.03
+BIN_DROP_Z = 0.98
+BIN_OPENING_X_BOUNDS = (2.80, 3.20)
+BIN_OPENING_HALF_Y = 0.20
 TABLE_X_LIMITS = (0.92, 2.68)
 TABLE_Y_LIMITS = (-0.42, 0.42)
 TABLE_CENTER_XY = ((TABLE_X_LIMITS[0] + TABLE_X_LIMITS[1]) * 0.5, (TABLE_Y_LIMITS[0] + TABLE_Y_LIMITS[1]) * 0.5)
@@ -6151,6 +6155,19 @@ def nav2_bin_pose_for_category(category: str | None) -> tuple[float, float, floa
     return (BIN_DRIVE_X, bin_y, yaw_facing_bin(BIN_DRIVE_X, bin_y, bin_y))
 
 
+def sort_bin_layout_metadata() -> dict[str, dict[str, Any]]:
+    layout: dict[str, dict[str, Any]] = {}
+    for category in MOTION_SORT_CATEGORIES:
+        layout[category] = {
+            "bin_name": BIN_NAME_BY_CATEGORY.get(category, "other"),
+            "bin_y_m": float(bin_y_for_category(category)),
+            "nav2_standpoint_pose": [float(v) for v in nav2_bin_pose_for_category(category)],
+            "drop_pose_world": bin_drop_position_for_category(category).astype(float).tolist(),
+            "opening_bounds": bin_opening_bounds_for_category(category),
+        }
+    return layout
+
+
 def waypoint_names() -> list[str]:
     return list(WAYPOINT_REGISTRY.keys())
 
@@ -7071,6 +7088,29 @@ def bin_y_for_category(category: str | None) -> float:
     return BIN_Y_BY_CATEGORY.get(canonical_category(category), BIN_Y_BY_CATEGORY["其他垃圾"])
 
 
+def bin_drop_position_for_category(category: str | None) -> np.ndarray:
+    return np.array([BIN_DROP_X, bin_y_for_category(category), BIN_DROP_Z], dtype=np.float32)
+
+
+def bin_opening_bounds_for_category(category: str | None) -> dict[str, list[float]]:
+    bin_y = bin_y_for_category(category)
+    return {
+        "x_m": [float(BIN_OPENING_X_BOUNDS[0]), float(BIN_OPENING_X_BOUNDS[1])],
+        "y_m": [float(bin_y - BIN_OPENING_HALF_Y), float(bin_y + BIN_OPENING_HALF_Y)],
+    }
+
+
+def point_inside_bin_opening_xy(point_w: np.ndarray | Sequence[float], category: str | None) -> bool:
+    point = np.asarray(point_w, dtype=np.float32).reshape(-1)
+    if point.size < 2 or not np.isfinite(point[:2]).all():
+        return False
+    bounds = bin_opening_bounds_for_category(category)
+    return (
+        bounds["x_m"][0] <= float(point[0]) <= bounds["x_m"][1]
+        and bounds["y_m"][0] <= float(point[1]) <= bounds["y_m"][1]
+    )
+
+
 def navigation_waypoints_to_bin(category: str | None) -> list[tuple[float, float, float]]:
     bin_y = bin_y_for_category(category)
     return [
@@ -7090,7 +7130,7 @@ def navigation_waypoints_home() -> list[tuple[float, float, float]]:
 
 def drop_pose_for_category(selected: SelectedGrasp, category: str | None) -> np.ndarray:
     pose = np.array(selected.pose_world, dtype=np.float32).copy()
-    pose[:3, 3] = np.array([3.03, bin_y_for_category(category), 0.95], dtype=np.float32)
+    pose[:3, 3] = bin_drop_position_for_category(category)
     return pose
 
 
@@ -13629,6 +13669,102 @@ def mind_sort_update_carried_object(scene: InteractiveScene, robot: Articulation
     write_rigid_object_pose(scene, scene_key, pos_w, yaw)
 
 
+def mind_sort_align_object_over_bin_opening(
+    sim: SimulationContext,
+    scene: InteractiveScene,
+    robot: Articulation,
+    wheel_ids: list[int],
+    locked_joint_target: torch.Tensor,
+    tracker: Task319StateTracker,
+    scene_key: str,
+    category: str,
+    *,
+    steps: int | None = None,
+) -> dict[str, Any]:
+    tracker.enter("MIND_DROP_ALIGN", scene_key=scene_key, category=category, mode="align_release_over_hardcoded_bin")
+    sim_dt = sim.get_physics_dt()
+    gripper = AttachedParallelGripper(robot)
+    alignment_steps = max(1, int(steps) if steps is not None else min(max(1, int(args_cli.drop_steps)), 60))
+    bounds = bin_opening_bounds_for_category(category)
+    hardcoded_release = bin_drop_position_for_category(category)
+    attachment = _MIND_SORT_GRIPPER_CARRY_ATTACHMENTS.get(scene_key)
+    object_start = tensor_to_numpy(scene[scene_key].data.root_state_w[0, :3]).astype(np.float32)
+    release_yaw = math.pi
+    carried_pose_meta: dict[str, Any] = {}
+    carried_pos = object_start.copy()
+    if attachment is not None:
+        carried_tuple, carried_yaw, carried_pose_meta = mind_sort_gripper_carried_pose(scene, robot, scene_key)
+        carried_pos = np.asarray(carried_tuple, dtype=np.float32).reshape(3)
+        release_yaw = float(carried_yaw)
+
+    tcp_pos = None
+    tcp_pose_meta: dict[str, Any] = {}
+    try:
+        ee_body_id = int((attachment or {}).get("right_ee_body_id") or resolve_right_ee_body_id(scene))
+        tcp_pose_w = tcp_pose_matrix(robot, ee_body_id).astype(np.float32)
+        tcp_pos = tcp_pose_w[:3, 3].astype(np.float32)
+        tcp_pose_meta = {
+            "right_ee_body_id": ee_body_id,
+            "tcp_world_m": tcp_pos.astype(float).tolist(),
+            "tcp_inside_bin_opening_xy": bool(point_inside_bin_opening_xy(tcp_pos, category)),
+        }
+    except Exception as exc:
+        tcp_pose_meta = {"error": repr(exc)}
+
+    carried_inside = bool(point_inside_bin_opening_xy(carried_pos, category))
+    tcp_inside = bool(tcp_pos is not None and point_inside_bin_opening_xy(tcp_pos, category))
+    release_pos = hardcoded_release.copy()
+    release_mode = "hardcoded_bin_center_fallback"
+    if attachment is not None and carried_inside:
+        release_pos[:2] = carried_pos[:2]
+        release_mode = "gripper_carried_pose_inside_bin_opening"
+    elif tcp_inside and tcp_pos is not None:
+        release_pos[:2] = tcp_pos[:2]
+        release_mode = "tcp_inside_bin_opening"
+    release_pos[2] = float(BIN_DROP_Z)
+
+    start_pos = object_start.copy()
+    for step in range(alignment_steps):
+        alpha = min_jerk(float(step + 1) / float(alignment_steps))
+        pos = (1.0 - alpha) * start_pos + alpha * release_pos
+        hold_non_wheel_joints(robot, locked_joint_target, wheel_ids)
+        apply_wheel_velocity(robot, wheel_ids, 0.0, 0.0, sim_dt)
+        gripper.close()
+        stabilize_robot_base_for_nav(robot)
+        write_rigid_object_pose(scene, scene_key, pos, release_yaw)
+        scene.write_data_to_sim()
+        sim.step(render=True)
+        scene.update(sim_dt)
+        record_video_frame(scene)
+        gui_playback_tick(sim_dt)
+        tracker.tick()
+
+    final_pos = tensor_to_numpy(scene[scene_key].data.root_state_w[0, :3]).astype(np.float32)
+    tcp_to_release = None if tcp_pos is None else (tcp_pos - release_pos).astype(float).tolist()
+    return {
+        "success": True,
+        "mode": release_mode,
+        "scene_key": scene_key,
+        "category": category,
+        "canonical_category": canonical_category(category),
+        "target_bin_name": BIN_NAME_BY_CATEGORY.get(canonical_category(category), "other"),
+        "bin_y_m": float(bin_y_for_category(category)),
+        "bin_opening_bounds": bounds,
+        "hardcoded_bin_release_pose_world": hardcoded_release.astype(float).tolist(),
+        "release_pose_world": release_pos.astype(float).tolist(),
+        "object_start_world_m": object_start.astype(float).tolist(),
+        "object_final_pre_release_world_m": final_pos.astype(float).tolist(),
+        "carried_pose_world_m": carried_pos.astype(float).tolist(),
+        "carried_inside_bin_opening_xy": carried_inside,
+        "tcp_inside_bin_opening_xy": tcp_inside,
+        "tcp_to_release_offset_m": tcp_to_release,
+        "steps": int(alignment_steps),
+        "gripper_attachment": attachment,
+        "carried_pose_meta": carried_pose_meta,
+        "tcp_pose_meta": tcp_pose_meta,
+    }
+
+
 def mind_sort_settle_at_table(
     sim: SimulationContext,
     scene: InteractiveScene,
@@ -14081,13 +14217,31 @@ def mind_sort_drop_object(
 ) -> dict[str, Any]:
     tracker.enter("MIND_DROP_RELEASE", scene_key=scene_key, category=category)
     sim_dt = sim.get_physics_dt()
+    drop_alignment = mind_sort_align_object_over_bin_opening(
+        sim,
+        scene,
+        robot,
+        wheel_ids,
+        locked_joint_target,
+        tracker,
+        scene_key,
+        category,
+    )
+    tracker.enter(
+        "MIND_DROP_RELEASE",
+        scene_key=scene_key,
+        category=category,
+        release_pose=drop_alignment.get("release_pose_world"),
+        target_bin_name=drop_alignment.get("target_bin_name"),
+    )
     released_attachment = _MIND_SORT_GRIPPER_CARRY_ATTACHMENTS.pop(scene_key, None)
-    bin_y = bin_y_for_category(category)
-    drop_pos = (3.03, bin_y, 0.98)
+    gripper = AttachedParallelGripper(robot)
+    drop_pos = np.asarray(drop_alignment.get("release_pose_world", bin_drop_position_for_category(category)), dtype=np.float32).reshape(3)
     write_rigid_object_pose(scene, scene_key, drop_pos, math.pi)
     for _ in range(max(1, int(args_cli.drop_steps))):
         hold_non_wheel_joints(robot, locked_joint_target, wheel_ids)
         apply_wheel_velocity(robot, wheel_ids, 0.0, 0.0, sim_dt)
+        gripper.set_width(gripper.limits.max_width_m)
         stabilize_robot_base_for_nav(robot)
         scene.write_data_to_sim()
         sim.step(render=True)
@@ -14100,8 +14254,10 @@ def mind_sort_drop_object(
         "success": True,
         "scene_key": scene_key,
         "category": category,
-        "target_bin_name": BIN_NAME_BY_CATEGORY.get(category, "other"),
-        "drop_pose_world": [float(v) for v in drop_pos],
+        "canonical_category": canonical_category(category),
+        "target_bin_name": BIN_NAME_BY_CATEGORY.get(canonical_category(category), "other"),
+        "drop_alignment": drop_alignment,
+        "drop_pose_world": [float(v) for v in drop_pos.tolist()],
         "final_pose_world": final_pos,
         "released_gripper_attachment": released_attachment,
     }
@@ -14121,6 +14277,26 @@ def mind_sort_release_physical_object(
     gripper = AttachedParallelGripper(robot)
     sim_dt = sim.get_physics_dt()
     steps = max(1, int(args_cli.drop_steps))
+    drop_alignment = None
+    if scene_key in scene.keys():
+        drop_alignment = mind_sort_align_object_over_bin_opening(
+            sim,
+            scene,
+            robot,
+            wheel_ids,
+            locked_joint_target,
+            tracker,
+            scene_key,
+            category,
+        )
+    tracker.enter(
+        "DROP",
+        mode="physical_gripper_release",
+        scene_key=scene_key,
+        category=category,
+        release_pose=None if drop_alignment is None else drop_alignment.get("release_pose_world"),
+        target_bin_name=None if drop_alignment is None else drop_alignment.get("target_bin_name"),
+    )
     for _ in range(steps):
         hold_non_wheel_joints(robot, locked_joint_target, wheel_ids)
         apply_wheel_velocity(robot, wheel_ids, 0.0, 0.0, sim_dt)
@@ -14139,7 +14315,9 @@ def mind_sort_release_physical_object(
         "mode": "physical_gripper_release",
         "scene_key": scene_key,
         "category": category,
-        "target_bin_name": BIN_NAME_BY_CATEGORY.get(category, "other"),
+        "canonical_category": canonical_category(category),
+        "target_bin_name": BIN_NAME_BY_CATEGORY.get(canonical_category(category), "other"),
+        "drop_alignment": drop_alignment,
         "steps": int(steps),
         "final_pose_world": final_pos,
     }
@@ -15403,6 +15581,7 @@ def run_mind_sort_demo(sim: SimulationContext, scene: InteractiveScene, run_dir:
             "report_label": "gripper proximity assisted pickup",
             "carry_frame": "right_gripper_tcp",
             "visual_policy": "object_root_keeps_low_grasp_tcp_local_offset_so_it_appears_inside_the_closed_gripper",
+            "drop_policy": "before_release_align_object_to_the_selected_hardcoded_bin_opening_then_open_gripper",
         },
         "suction_assist": {
             "enabled": bool(args_cli.mind_sort_suction_assist),
@@ -15416,6 +15595,7 @@ def run_mind_sort_demo(sim: SimulationContext, scene: InteractiveScene, run_dir:
         "wheel_joints": wheel_names,
         "observe_pose": [float(v) for v in waypoint_pose("home")],
         "bin_staging_pose": [float(v) for v in waypoint_pose("bin_center")],
+        "bin_layout": sort_bin_layout_metadata(),
         "max_objects": int(args_cli.mind_sort_max_objects),
         "settle_steps": int(args_cli.mind_sort_settle_steps),
         "legacy_simulated_pick_attach_offset": {
@@ -15561,6 +15741,13 @@ def run_mind_sort_demo(sim: SimulationContext, scene: InteractiveScene, run_dir:
             cycle_meta["selected_scene_key"] = scene_key
             cycle_meta["selected_scene_object_name"] = scene_object_name
             cycle_meta["category"] = category
+            cycle_meta["selected_bin"] = {
+                "category": category,
+                "bin_name": BIN_NAME_BY_CATEGORY.get(category, "other"),
+                "nav2_standpoint_pose": [float(v) for v in nav2_bin_pose_for_category(category)],
+                "drop_pose_world": bin_drop_position_for_category(category).astype(float).tolist(),
+                "opening_bounds": bin_opening_bounds_for_category(category),
+            }
 
             selected_standpoint = dict(standpoint_meta.get("selected") or {})
             table_pose = mind_sort_table_pose_from_selected(selected_standpoint)
