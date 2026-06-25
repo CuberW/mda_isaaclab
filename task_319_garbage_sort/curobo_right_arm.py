@@ -845,6 +845,239 @@ class KuavoRightArmCuroboPlanner:
         }
         return CuroboPlanResult(True, "", positions, metadata)
 
+    def solve_ik_chain_for_poses_sequential(
+        self,
+        start_joint_positions: np.ndarray,
+        target_poses_in_base: list[np.ndarray],
+        *,
+        return_seeds: int = 48,
+        max_waypoint_joint_l2_rad: float | None = None,
+        newton_iters: int | None = None,
+        position_only: bool = False,
+    ) -> CuroboPlanResult:
+        """Solve a Cartesian pose chain one waypoint at a time.
+
+        cuRobo's batched IK is fast, but redundant arms can jump to a different
+        branch on a later waypoint because every waypoint is seeded from the
+        same start posture.  The final grasp descent needs continuity more than
+        throughput, so this variant seeds waypoint N from waypoint N-1.
+        """
+
+        raw_start_q = np.asarray(start_joint_positions, dtype=np.float32).reshape(len(RIGHT_ARM_JOINT_NAMES))
+        clamp_margin = max(1.0e-4, float(self.joint_limit_clip_rad) + 1.0e-4) if self.joint_limit_clip_rad > 0.0 else 1.0e-4
+        current_q, start_limit_audit = clamp_right_arm_start_q_to_limits(raw_start_q, self.joint_limits, margin_rad=clamp_margin)
+        initial_q = current_q.copy()
+        initial_fk_quat = self.fk_quaternions(initial_q)[0]
+        current_fk_quat = initial_fk_quat.copy()
+        poses = [np.asarray(p, dtype=np.float32).reshape(4, 4) for p in target_poses_in_base]
+        if not poses:
+            return CuroboPlanResult(
+                False,
+                "No Cartesian waypoints were provided for sequential cuRobo IK chain.",
+                np.empty((0, len(RIGHT_ARM_JOINT_NAMES)), dtype=np.float32),
+                {"sequential_ik": True, "start_q_raw": raw_start_q.astype(float).tolist(), "start_limit_audit": start_limit_audit},
+            )
+
+        seed_count = max(1, int(return_seeds))
+        if bool(position_only):
+            from curobo.rollout.cost.pose_cost import PoseCostMetric
+
+            pose_cost_metric = PoseCostMetric(
+                reach_partial_pose=True,
+                reach_vec_weight=self.tensor_args.to_device([0.0, 0.0, 0.0, 1.0, 1.0, 1.0]),
+                project_to_goal_frame=False,
+            )
+            reset_pose_cost_metric = PoseCostMetric.reset_metric()
+        else:
+            pose_cost_metric = None
+            reset_pose_cost_metric = None
+
+        trajectory: list[np.ndarray] = []
+        waypoint_meta: list[dict[str, Any]] = []
+        dof = len(RIGHT_ARM_JOINT_NAMES)
+        try:
+            if pose_cost_metric is not None:
+                self.motion_gen.ik_solver.update_pose_cost_metric(pose_cost_metric)
+            for idx, pose_b in enumerate(poses):
+                goal = pose_matrices_to_curobo_batch_pose([pose_b], self.tensor_args)
+                retract_config = self.tensor_args.to_device(current_q.reshape(1, -1))
+                seed_config = self.tensor_args.to_device(np.repeat(current_q.reshape(1, 1, -1), seed_count, axis=1))
+                result = self.motion_gen.ik_solver.solve_batch(
+                    goal,
+                    retract_config=retract_config,
+                    seed_config=seed_config,
+                    return_seeds=seed_count,
+                    num_seeds=seed_count,
+                    use_nn_seed=False,
+                    newton_iters=newton_iters,
+                )
+                success = result.success.detach().cpu().numpy().astype(bool).reshape(1, -1)[0]
+                solutions = result.solution.detach().cpu().numpy().astype(np.float32).reshape(1, -1, dof)[0]
+                pos_error = result.position_error.detach().cpu().numpy().astype(np.float32).reshape(1, -1)[0]
+                rot_error = result.rotation_error.detach().cpu().numpy().astype(np.float32).reshape(1, -1)[0]
+                valid_idx = np.flatnonzero(success)
+                if valid_idx.shape[0] == 0:
+                    best_idx = int(np.argmin(pos_error)) if pos_error.shape[0] else -1
+                    waypoint_meta.append(
+                        {
+                            "index": int(idx),
+                            "success": False,
+                            "target_pose_base": pose_b.astype(float).tolist(),
+                            "best_seed_index": best_idx,
+                            "best_position_error_m": float(pos_error[best_idx]) if best_idx >= 0 else float("inf"),
+                            "best_rotation_error_rad": float(rot_error[best_idx]) if best_idx >= 0 and rot_error.shape[0] else float("inf"),
+                            "reason": "no_successful_sequential_ik_seed",
+                        }
+                    )
+                    return CuroboPlanResult(
+                        False,
+                        f"Sequential cuRobo IK failed at Cartesian waypoint {idx}.",
+                        np.asarray(trajectory, dtype=np.float32).reshape(-1, dof),
+                        {
+                            "sequential_ik": True,
+                            "position_only": bool(position_only),
+                            "start_q_raw": raw_start_q.astype(float).tolist(),
+                            "start_q_used": initial_q.astype(float).tolist(),
+                            "start_limit_audit": start_limit_audit,
+                            "failed_waypoint_index": int(idx),
+                            "failed_waypoint_pose_base": pose_b.astype(float).tolist(),
+                            "waypoints": waypoint_meta,
+                        },
+                    )
+
+                candidate_q = solutions[valid_idx]
+                joint_distance = np.linalg.norm(candidate_q - current_q.reshape(1, -1), axis=1)
+                candidate_fk_quats = self.fk_quaternions(candidate_q)
+                fk_rot_from_start = quaternion_distance_wxyz(candidate_fk_quats, initial_fk_quat)
+                fk_rot_from_previous = quaternion_distance_wxyz(candidate_fk_quats, current_fk_quat)
+                wrist_delta_from_start = np.linalg.norm(candidate_q[:, 4:7] - initial_q.reshape(1, -1)[:, 4:7], axis=1)
+                if bool(position_only):
+                    score = (
+                        joint_distance
+                        + 10.0 * pos_error[valid_idx]
+                        + 5.0 * fk_rot_from_start
+                        + 2.0 * fk_rot_from_previous
+                        + 0.75 * wrist_delta_from_start
+                    )
+                else:
+                    score = joint_distance + 10.0 * pos_error[valid_idx] + 0.25 * rot_error[valid_idx]
+                selected_local = int(np.argmin(score))
+                selected_idx = int(valid_idx[selected_local])
+                selected_q = solutions[selected_idx].astype(np.float32)
+                selected_joint_distance = float(joint_distance[selected_local])
+                selected_fk_rotation_from_start = float(fk_rot_from_start[selected_local])
+                selected_fk_rotation_from_previous = float(fk_rot_from_previous[selected_local])
+                selected_wrist_delta_from_start = float(wrist_delta_from_start[selected_local])
+                if (
+                    max_waypoint_joint_l2_rad is not None
+                    and math.isfinite(float(max_waypoint_joint_l2_rad))
+                    and float(max_waypoint_joint_l2_rad) > 0.0
+                    and selected_joint_distance > float(max_waypoint_joint_l2_rad)
+                ):
+                    waypoint_meta.append(
+                        {
+                            "index": int(idx),
+                            "success": False,
+                            "target_pose_base": pose_b.astype(float).tolist(),
+                            "selected_seed_index": selected_idx,
+                            "selected_position_error_m": float(pos_error[selected_idx]),
+                            "selected_rotation_error_rad": float(rot_error[selected_idx]),
+                            "selected_joint_distance_from_previous_l2_rad": selected_joint_distance,
+                            "selected_fk_rotation_from_hover_rad": selected_fk_rotation_from_start,
+                            "selected_fk_rotation_from_previous_rad": selected_fk_rotation_from_previous,
+                            "selected_wrist_delta_from_hover_l2_rad": selected_wrist_delta_from_start,
+                            "success_seed_count": int(valid_idx.shape[0]),
+                            "reason": "nearest_sequential_ik_solution_requires_excessive_joint_jump",
+                            "max_waypoint_joint_l2_rad": float(max_waypoint_joint_l2_rad),
+                        }
+                    )
+                    return CuroboPlanResult(
+                        False,
+                        (
+                            f"Sequential cuRobo IK waypoint {idx} requires joint jump "
+                            f"{selected_joint_distance:.3f}rad > {float(max_waypoint_joint_l2_rad):.3f}rad."
+                        ),
+                        np.asarray(trajectory, dtype=np.float32).reshape(-1, dof),
+                        {
+                            "sequential_ik": True,
+                            "position_only": bool(position_only),
+                            "start_q_raw": raw_start_q.astype(float).tolist(),
+                            "start_q_used": initial_q.astype(float).tolist(),
+                            "start_limit_audit": start_limit_audit,
+                            "failed_waypoint_index": int(idx),
+                            "failed_waypoint_pose_base": pose_b.astype(float).tolist(),
+                            "waypoints": waypoint_meta,
+                        },
+                    )
+
+                trajectory.append(selected_q)
+                waypoint_meta.append(
+                    {
+                        "index": int(idx),
+                        "success": True,
+                        "target_pose_base": pose_b.astype(float).tolist(),
+                        "selected_seed_index": selected_idx,
+                        "selected_position_error_m": float(pos_error[selected_idx]),
+                        "selected_rotation_error_rad": float(rot_error[selected_idx]),
+                        "selected_joint_distance_from_previous_l2_rad": selected_joint_distance,
+                        "selected_fk_rotation_from_hover_rad": selected_fk_rotation_from_start,
+                        "selected_fk_rotation_from_previous_rad": selected_fk_rotation_from_previous,
+                        "selected_wrist_delta_from_hover_l2_rad": selected_wrist_delta_from_start,
+                        "success_seed_count": int(valid_idx.shape[0]),
+                    }
+                )
+                current_q = selected_q
+                current_fk_quat = candidate_fk_quats[selected_local].copy()
+        except Exception as exc:
+            return CuroboPlanResult(
+                False,
+                f"Sequential cuRobo IK exception for Cartesian descent: {exc}",
+                np.asarray(trajectory, dtype=np.float32).reshape(-1, dof),
+                {
+                    "sequential_ik": True,
+                    "position_only": bool(position_only),
+                    "start_q_raw": raw_start_q.astype(float).tolist(),
+                    "start_q_used": initial_q.astype(float).tolist(),
+                    "start_limit_audit": start_limit_audit,
+                    "cartesian_waypoint_count": int(len(poses)),
+                    "return_seeds": int(seed_count),
+                    "exception": repr(exc),
+                    "waypoints": waypoint_meta,
+                },
+            )
+        finally:
+            if reset_pose_cost_metric is not None:
+                self.motion_gen.ik_solver.update_pose_cost_metric(reset_pose_cost_metric)
+
+        positions = np.asarray(trajectory, dtype=np.float32).reshape(-1, dof)
+        metadata: dict[str, Any] = {
+            "success": True,
+            "sequential_ik": True,
+            "position_only": bool(position_only),
+            "joint_names": list(RIGHT_ARM_JOINT_NAMES),
+            "start_q_raw": raw_start_q.astype(float).tolist(),
+            "start_q_used": initial_q.astype(float).tolist(),
+            "start_limit_audit": start_limit_audit,
+            "hover_fk_quaternion_wxyz": initial_fk_quat.astype(float).tolist(),
+            "cartesian_waypoint_count": int(len(poses)),
+            "return_seeds": int(return_seeds),
+            "max_waypoint_joint_l2_rad": None if max_waypoint_joint_l2_rad is None else float(max_waypoint_joint_l2_rad),
+            "newton_iters": None if newton_iters is None else int(newton_iters),
+            "solution_selection_policy": (
+                "sequential_position_hard_constraint_with_hover_fk_orientation_and_wrist_continuity_score"
+                if bool(position_only)
+                else "sequential_joint_continuity_position_rotation_error_score"
+            ),
+            "pose_cost_metric": {
+                "type": "reach_partial_pose" if bool(position_only) else "full_pose",
+                "reach_vec_weight_rot_xyz_pos_xyz": [0.0, 0.0, 0.0, 1.0, 1.0, 1.0] if bool(position_only) else [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                "project_to_goal_frame": False if bool(position_only) else None,
+            },
+            "waypoints": waypoint_meta,
+            "final_fk": self.fk_summary(positions[-1]) if positions.shape[0] else self.fk_summary(current_q),
+        }
+        return CuroboPlanResult(True, "", positions, metadata)
+
 
 def build_world_cuboids(cuboids: list[dict[str, Any]]):
     """Build a cuRobo WorldConfig from cuboid dictionaries."""

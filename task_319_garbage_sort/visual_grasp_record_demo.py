@@ -477,7 +477,9 @@ parser.add_argument("--curobo_command_min_steps", type=int, default=120, help="M
 parser.add_argument("--curobo_final_settle_steps", type=int, default=80, help="Extra Isaac control steps holding the last cuRobo joint waypoint so simulated joints can settle before TCP error is judged.")
 parser.add_argument("--curobo_tcp_refine", action=argparse.BooleanOptionalAction, default=True, help="After a cuRobo segment, use a short right-arm position-only IsaacLab IK refinement if TCP tracking error remains high.")
 parser.add_argument("--curobo_tcp_refine_steps", type=int, default=80)
-parser.add_argument("--curobo_grasp_local_tcp_descent", action=argparse.BooleanOptionalAction, default=True, help="After cuRobo reaches pregrasp, descend vertically along fixed hover XY/quaternion with a cuRobo Cartesian IK chain instead of replanning a low table-near segment.")
+parser.add_argument("--curobo_grasp_local_tcp_descent", action=argparse.BooleanOptionalAction, default=True, help="After cuRobo reaches pregrasp, descend vertically from the hover TCP instead of replanning a low table-near segment.")
+parser.add_argument("--curobo_grasp_servo_descent", action=argparse.BooleanOptionalAction, default=False, help="Experimental final descent: use IsaacLab TCP position-only closed-loop servo after cuRobo reaches hover. Disabled by default because the free wrist orientation can drift.")
+parser.add_argument("--curobo_grasp_servo_stop_distance_m", type=float, default=0.02, help="Stop the final TCP position servo once the gripper TCP is within this distance of the visual object grasp point. Default matches the 2 cm gripper-proximity carry gate.")
 parser.add_argument("--curobo_lift_local_tcp_ascent", action=argparse.BooleanOptionalAction, default=True, help="After closing the gripper, lift vertically from the actual grasp TCP pose with a cuRobo Cartesian IK chain instead of free-space replanning.")
 parser.add_argument("--curobo_cartesian_descent_waypoint_spacing_m", type=float, default=0.002, help="Maximum TCP Z spacing between cuRobo IK waypoints during the final Cartesian grasp descent.")
 parser.add_argument("--curobo_cartesian_descent_min_waypoints", type=int, default=50, help="Minimum number of cuRobo IK target waypoints used for the final Cartesian grasp descent.")
@@ -486,6 +488,7 @@ parser.add_argument("--curobo_cartesian_descent_steps_per_waypoint", type=int, d
 parser.add_argument("--curobo_cartesian_descent_max_joint_step", type=float, default=0.0015, help="Joint target step clamp used only for the final slow Cartesian descent.")
 parser.add_argument("--curobo_cartesian_descent_max_xy_error_m", type=float, default=0.015, help="Abort the final descent if actual TCP XY drifts farther than this from the locked hover XY.")
 parser.add_argument("--curobo_cartesian_descent_max_waypoint_joint_l2_rad", type=float, default=0.8, help="Reject any Cartesian descent IK waypoint whose nearest valid solution jumps farther than this from the previous waypoint.")
+parser.add_argument("--curobo_cartesian_descent_position_only", action=argparse.BooleanOptionalAction, default=True, help="Use cuRobo partial-pose IK for the final vertical descent: constrain TCP XYZ, preserve the hover posture by continuity scoring, and do not require exact wrist axis alignment.")
 parser.add_argument("--curobo_grasp_fixed_wrist_pose_fallback", action=argparse.BooleanOptionalAction, default=True, help="If the final grasp descent misses the TCP target, restore pregrasp and descend with 6D pose IK using the pregrasp wrist orientation so the TCP offset stays fixed.")
 parser.add_argument("--curobo_use_kuavo_analytic_seed", action=argparse.BooleanOptionalAction, default=True, help="Use the official Kuavo analytic IK solution as the default redundant-posture target, then let cuRobo plan a collision-aware joint-space trajectory to it.")
 parser.add_argument("--curobo_position_only_tcp", action=argparse.BooleanOptionalAction, default=True, help="Use cuRobo partial-pose planning for TCP targets: constrain XYZ position, ignore end-effector axis alignment, and regularize to the current joint state to avoid redundant twisted postures.")
@@ -1294,6 +1297,7 @@ TASK_STATE_NAMES = [
     "NAV_TO_BIN_STAGING",
     "SELECT_BIN_BY_CATEGORY",
     "NAV_TO_BIN",
+    "MIND_DROP_ALIGN",
     "MIND_DROP_RELEASE",
     "DROP",
     "RETURN_HOME",
@@ -5047,6 +5051,159 @@ def run_ik_segment(
     }
 
 
+def run_tcp_position_servo_descent(
+    sim: SimulationContext,
+    scene: InteractiveScene,
+    robot: Articulation,
+    ik_controller: DifferentialIKController,
+    robot_entity_cfg: SceneEntityCfg,
+    ee_body_id: int,
+    ee_jacobi_idx: int,
+    target_tcp_pose_w: np.ndarray,
+    object_target_tcp_w: np.ndarray,
+    steps: int,
+    *,
+    gripper: AttachedParallelGripper | None = None,
+    gripper_width: float | None = None,
+    locked_root_pose_w: torch.Tensor | None = None,
+    debug_target_pose_w: np.ndarray | None = None,
+    proximity_stop_distance_m: float | None = None,
+    max_joint_step: float | None = None,
+) -> dict[str, Any]:
+    sim_dt = sim.get_physics_dt()
+    if ik_controller.action_dim != 3:
+        return {
+            "executed_steps": 0,
+            "final_pos_error_m": float("inf"),
+            "final_tcp_pos_error_m": float("inf"),
+            "position_error_reference": "tcp",
+            "aborted": True,
+            "abort_reason": f"position-only servo requires a 3D position IK controller, got action_dim={ik_controller.action_dim}",
+        }
+
+    target_tcp_np = np.asarray(target_tcp_pose_w, dtype=np.float32).reshape(4, 4)[:3, 3].copy()
+    object_target_np = np.asarray(object_target_tcp_w, dtype=np.float32).reshape(3).copy()
+    start_tcp_pose = tcp_pose_matrix(robot, ee_body_id).astype(np.float32)
+    start_tcp_np = start_tcp_pose[:3, 3].copy()
+    lock_xy_np = start_tcp_np[:2].copy()
+    servo_target_np = target_tcp_np.copy()
+    servo_target_np[:2] = lock_xy_np
+    stop_distance = float(proximity_stop_distance_m if proximity_stop_distance_m is not None else args_cli.mind_sort_gripper_proximity_assist_max_distance_m)
+    if not math.isfinite(stop_distance) or stop_distance <= 0.0:
+        stop_distance = float("inf")
+    joint_step_limit = float(args_cli.max_joint_step)
+    if max_joint_step is not None and math.isfinite(float(max_joint_step)) and float(max_joint_step) > 0.0:
+        joint_step_limit = min(joint_step_limit, float(max_joint_step))
+
+    tcp_offset = torch.tensor(gripper_tcp_offset_m(), dtype=torch.float32, device=robot.device).reshape(1, 3, 1).repeat(robot.num_instances, 1, 1)
+    previous_joint_target = robot.data.joint_pos[:, robot_entity_cfg.joint_ids].clone()
+    locked_joint_target = robot.data.joint_pos.clone()
+    command = torch.zeros(robot.num_instances, ik_controller.action_dim, device=robot.device)
+    ik_controller.reset()
+
+    executed_steps = 0
+    max_joint_step_seen = 0.0
+    max_xy_error = 0.0
+    closest_object_distance = float("inf")
+    closest_vertical_distance = float("inf")
+    closest_tcp_world = start_tcp_np.copy()
+    reached_proximity = False
+    reached_precise_target = False
+    aborted = False
+    abort_reason = ""
+    steps = max(1, int(steps))
+    for step in range(steps):
+        alpha = min_jerk(float(step + 1) / float(steps))
+        desired_tcp_np = start_tcp_np.copy()
+        desired_tcp_np[:2] = lock_xy_np
+        desired_tcp_np[2] = float((1.0 - alpha) * start_tcp_np[2] + alpha * servo_target_np[2])
+
+        desired_tcp_w = torch.tensor(desired_tcp_np, dtype=torch.float32, device=robot.device).repeat(robot.num_instances, 1)
+        jacobian = robot.root_physx_view.get_jacobians()[:, ee_jacobi_idx, :, robot_entity_cfg.joint_ids]
+        ee_pose_w = robot.data.body_pose_w[:, ee_body_id]
+        ee_pos_b, ee_quat_b = subtract_frame_transforms(
+            robot.data.root_pose_w[:, 0:3], robot.data.root_pose_w[:, 3:7], ee_pose_w[:, 0:3], ee_pose_w[:, 3:7]
+        )
+        wrist_rot_w = matrix_from_quat(ee_pose_w[:, 3:7])
+        desired_wrist_pos_w = desired_tcp_w - torch.bmm(wrist_rot_w, tcp_offset).squeeze(-1)
+        desired_pos_b, _ = subtract_frame_transforms(
+            robot.data.root_pose_w[:, 0:3], robot.data.root_pose_w[:, 3:7], desired_wrist_pos_w, ee_pose_w[:, 3:7]
+        )
+        command[:, 0:3] = desired_pos_b
+        ik_controller.set_command(command, ee_quat=ee_quat_b)
+        joint_pos_des = ik_controller.compute(ee_pos_b, ee_quat_b, jacobian, robot.data.joint_pos[:, robot_entity_cfg.joint_ids])
+        if not torch.isfinite(joint_pos_des).all():
+            aborted = True
+            abort_reason = "position-only TCP servo produced non-finite joint targets"
+            break
+        joint_pos_des = clamp_joint_step(joint_pos_des, previous_joint_target, joint_step_limit)
+        max_joint_step_seen = max(max_joint_step_seen, float(torch.max(torch.abs(joint_pos_des - previous_joint_target)).item()))
+        previous_joint_target = joint_pos_des.clone()
+
+        robot.set_joint_position_target(locked_joint_target)
+        robot.set_joint_position_target(joint_pos_des, joint_ids=robot_entity_cfg.joint_ids)
+        if gripper is not None and gripper_width is not None:
+            gripper.set_width(gripper_width)
+        stabilize_robot_base(robot, locked_root_pose_w)
+        scene.write_data_to_sim()
+        sim.step(render=True)
+        scene.update(sim_dt)
+        record_video_frame(scene)
+        gui_playback_tick(sim_dt)
+        executed_steps += 1
+        if debug_target_pose_w is not None and (step % 4 == 0 or step == steps - 1):
+            render_calibration_debug_markers(scene, debug_target_pose_w, tcp_pose_matrix(robot, ee_body_id))
+
+        tcp_pos = tcp_pose_matrix(robot, ee_body_id)[:3, 3].astype(np.float32)
+        xy_error = float(np.linalg.norm(tcp_pos[:2] - lock_xy_np))
+        vertical_distance = float(np.linalg.norm(tcp_pos - servo_target_np))
+        object_distance = float(np.linalg.norm(tcp_pos - object_target_np))
+        max_xy_error = max(max_xy_error, xy_error)
+        if object_distance < closest_object_distance:
+            closest_object_distance = object_distance
+            closest_tcp_world = tcp_pos.copy()
+        closest_vertical_distance = min(closest_vertical_distance, vertical_distance)
+        reached_precise_target = bool(vertical_distance <= float(args_cli.grasp_error_threshold_m))
+        reached_proximity = bool(object_distance <= stop_distance)
+        if reached_precise_target or reached_proximity:
+            break
+
+    final_tcp_pose = tcp_pose_matrix(robot, ee_body_id).astype(np.float32)
+    final_tcp_np = final_tcp_pose[:3, 3].copy()
+    final_vertical_error = float(np.linalg.norm(final_tcp_np - servo_target_np))
+    final_object_distance = float(np.linalg.norm(final_tcp_np - object_target_np))
+    if final_object_distance < closest_object_distance:
+        closest_object_distance = final_object_distance
+        closest_tcp_world = final_tcp_np.copy()
+    reached_proximity = bool(reached_proximity or closest_object_distance <= stop_distance)
+    return {
+        "max_joint_step_rad": max_joint_step_seen,
+        "executed_steps": int(executed_steps),
+        "final_pos_error_m": final_vertical_error,
+        "final_tcp_pos_error_m": final_vertical_error,
+        "final_tcp_to_object_target_m": final_object_distance,
+        "closest_tcp_to_object_target_m": closest_object_distance,
+        "closest_tcp_to_vertical_target_m": closest_vertical_distance,
+        "closest_tcp_world_m": closest_tcp_world.astype(float).tolist(),
+        "position_error_reference": "tcp_position_servo_vertical_target",
+        "ik_command_type": str(ik_controller.cfg.command_type),
+        "tcp_position_control": True,
+        "start_tcp_world_m": start_tcp_np.astype(float).tolist(),
+        "target_tcp_world_m": servo_target_np.astype(float).tolist(),
+        "object_grasp_target_tcp_world_m": object_target_np.astype(float).tolist(),
+        "final_tcp_world_m": final_tcp_np.astype(float).tolist(),
+        "locked_xy_world_m": lock_xy_np.astype(float).tolist(),
+        "locked_xy_minus_object_target_xy_m": (lock_xy_np - object_target_np[:2]).astype(float).tolist(),
+        "locked_xy_object_target_distance_m": float(np.linalg.norm(lock_xy_np - object_target_np[:2])),
+        "max_cartesian_xy_error_m": max_xy_error,
+        "proximity_stop_distance_m": stop_distance,
+        "reached_proximity_stop": reached_proximity,
+        "reached_precise_vertical_target": bool(reached_precise_target),
+        "aborted": aborted,
+        "abort_reason": abort_reason,
+    }
+
+
 def run_ik_segment_until_converged(
     sim: SimulationContext,
     scene: InteractiveScene,
@@ -5277,6 +5434,8 @@ def run_curobo_joint_trajectory(
     cartesian_lock_xy_w: np.ndarray | None = None,
     max_cartesian_xy_error_m: float | None = None,
     abort_on_cartesian_xy_error: bool = False,
+    object_target_tcp_w: np.ndarray | None = None,
+    proximity_stop_distance_m: float | None = None,
 ) -> dict[str, Any]:
     sim_dt = sim.get_physics_dt()
     joint_ids = robot_entity_cfg.joint_ids
@@ -5294,6 +5453,7 @@ def run_curobo_joint_trajectory(
     previous_joint_target = robot.data.joint_pos[:, joint_ids].clone()
     locked_joint_target = robot.data.joint_pos.clone()
     target_tcp_np = np.asarray(target_tcp_pose_w, dtype=np.float32).reshape(4, 4)[:3, 3].copy() if target_tcp_pose_w is not None else None
+    object_target_np = np.asarray(object_target_tcp_w, dtype=np.float32).reshape(3).copy() if object_target_tcp_w is not None else None
     min_substeps_per_edge = max(1, int(math.ceil(max(1, int(min_steps)) / max(1, int(plan.shape[0] - 1)))))
     joint_step_limit = float(args_cli.max_joint_step)
     if max_joint_step_override is not None and math.isfinite(float(max_joint_step_override)) and float(max_joint_step_override) > 0.0:
@@ -5304,16 +5464,40 @@ def run_curobo_joint_trajectory(
     xy_error_limit = float("inf")
     if max_cartesian_xy_error_m is not None and math.isfinite(float(max_cartesian_xy_error_m)) and float(max_cartesian_xy_error_m) > 0.0:
         xy_error_limit = float(max_cartesian_xy_error_m)
+    stop_distance = float("inf")
+    if proximity_stop_distance_m is not None and math.isfinite(float(proximity_stop_distance_m)) and float(proximity_stop_distance_m) > 0.0:
+        stop_distance = float(proximity_stop_distance_m)
     max_joint_step = 0.0
     max_cartesian_xy_error = 0.0
+    closest_object_distance = float("inf")
+    closest_tcp_world = None
+    reached_proximity_stop = False
     executed_steps = 0
     settle_steps_executed = 0
     final_tcp_error = float("nan")
     aborted = False
     abort_reason = ""
+    stop_requested = False
+
+    def update_tcp_runtime_metrics() -> None:
+        nonlocal max_cartesian_xy_error, closest_object_distance, closest_tcp_world, reached_proximity_stop, stop_requested
+        tcp_pos = tcp_pose_matrix(robot, robot_entity_cfg.body_ids[0])[:3, 3].astype(np.float32)
+        if lock_xy_np is not None:
+            xy_error = float(np.linalg.norm(tcp_pos[:2] - lock_xy_np))
+            max_cartesian_xy_error = max(max_cartesian_xy_error, xy_error)
+            if bool(abort_on_cartesian_xy_error) and xy_error > xy_error_limit:
+                stop_requested = True
+        if object_target_np is not None:
+            object_distance = float(np.linalg.norm(tcp_pos - object_target_np))
+            if object_distance < closest_object_distance:
+                closest_object_distance = object_distance
+                closest_tcp_world = tcp_pos.copy()
+            if object_distance <= stop_distance:
+                reached_proximity_stop = True
+                stop_requested = True
 
     for waypoint in plan:
-        if aborted:
+        if aborted or stop_requested:
             break
         target_joint_pos = torch.tensor(waypoint, dtype=torch.float32, device=robot.device).reshape(1, -1).repeat(robot.num_instances, 1)
         max_delta = float(torch.max(torch.abs(target_joint_pos - previous_joint_target)).item())
@@ -5336,16 +5520,15 @@ def run_curobo_joint_trajectory(
             record_video_frame(scene)
             gui_playback_tick(sim_dt)
             executed_steps += 1
-            if lock_xy_np is not None:
-                tcp_xy = tcp_pose_matrix(robot, robot_entity_cfg.body_ids[0])[:2, 3].astype(np.float32)
-                xy_error = float(np.linalg.norm(tcp_xy - lock_xy_np))
-                max_cartesian_xy_error = max(max_cartesian_xy_error, xy_error)
-                if bool(abort_on_cartesian_xy_error) and xy_error > xy_error_limit:
-                    aborted = True
-                    abort_reason = f"Cartesian descent TCP XY drift exceeded threshold ({xy_error:.4f}m > {xy_error_limit:.4f}m)."
-                    break
+            update_tcp_runtime_metrics()
+            if bool(abort_on_cartesian_xy_error) and stop_requested and not reached_proximity_stop:
+                aborted = True
+                abort_reason = f"Cartesian descent TCP XY drift exceeded threshold ({max_cartesian_xy_error:.4f}m > {xy_error_limit:.4f}m)."
+                break
+            if reached_proximity_stop:
+                break
 
-    if not aborted and plan.shape[0] > 0 and int(args_cli.curobo_final_settle_steps) > 0:
+    if not aborted and not reached_proximity_stop and plan.shape[0] > 0 and int(args_cli.curobo_final_settle_steps) > 0:
         final_joint_target = torch.tensor(plan[-1], dtype=torch.float32, device=robot.device).reshape(1, -1).repeat(robot.num_instances, 1)
         for _ in range(int(args_cli.curobo_final_settle_steps)):
             robot.set_joint_position_target(locked_joint_target)
@@ -5360,16 +5543,23 @@ def run_curobo_joint_trajectory(
             gui_playback_tick(sim_dt)
             executed_steps += 1
             settle_steps_executed += 1
-            if lock_xy_np is not None:
-                tcp_xy = tcp_pose_matrix(robot, robot_entity_cfg.body_ids[0])[:2, 3].astype(np.float32)
-                xy_error = float(np.linalg.norm(tcp_xy - lock_xy_np))
-                max_cartesian_xy_error = max(max_cartesian_xy_error, xy_error)
-                if bool(abort_on_cartesian_xy_error) and xy_error > xy_error_limit:
-                    aborted = True
-                    abort_reason = f"Cartesian descent TCP XY drift exceeded threshold during settle ({xy_error:.4f}m > {xy_error_limit:.4f}m)."
-                    break
+            update_tcp_runtime_metrics()
+            if bool(abort_on_cartesian_xy_error) and stop_requested and not reached_proximity_stop:
+                aborted = True
+                abort_reason = f"Cartesian descent TCP XY drift exceeded threshold during settle ({max_cartesian_xy_error:.4f}m > {xy_error_limit:.4f}m)."
+                break
+            if reached_proximity_stop:
+                break
 
     final_tcp_pose = tcp_pose_matrix(robot, robot_entity_cfg.body_ids[0])
+    if object_target_np is not None:
+        final_object_distance = float(np.linalg.norm(final_tcp_pose[:3, 3].astype(np.float32) - object_target_np))
+        if final_object_distance < closest_object_distance:
+            closest_object_distance = final_object_distance
+            closest_tcp_world = final_tcp_pose[:3, 3].astype(np.float32).copy()
+        reached_proximity_stop = bool(reached_proximity_stop or final_object_distance <= stop_distance)
+    else:
+        final_object_distance = float("nan")
     final_orientation_delta: dict[str, Any] | None = None
     if target_tcp_np is not None:
         final_tcp_error = float(np.linalg.norm(final_tcp_pose[:3, 3] - target_tcp_np))
@@ -5398,6 +5588,12 @@ def run_curobo_joint_trajectory(
         "cartesian_lock_xy_world_m": lock_xy_np.astype(float).tolist() if lock_xy_np is not None else None,
         "max_cartesian_xy_error_m": float(max_cartesian_xy_error),
         "cartesian_xy_error_threshold_m": None if not math.isfinite(xy_error_limit) else float(xy_error_limit),
+        "object_grasp_target_tcp_world_m": object_target_np.astype(float).tolist() if object_target_np is not None else None,
+        "final_tcp_to_object_target_m": final_object_distance,
+        "closest_tcp_to_object_target_m": float(closest_object_distance),
+        "closest_tcp_world_m": closest_tcp_world.astype(float).tolist() if closest_tcp_world is not None else None,
+        "proximity_stop_distance_m": None if not math.isfinite(stop_distance) else float(stop_distance),
+        "reached_proximity_stop": bool(reached_proximity_stop),
         "aborted": bool(aborted),
         "abort_reason": abort_reason,
     }
@@ -10694,7 +10890,12 @@ def execute_curobo_right_arm_attempt(
     updates["final_grasp_candidate_width_m"] = float(candidate.width)
 
     if bool(args_cli.curobo_grasp_local_tcp_descent):
-        tracker.enter("GRASP", attempt_index=attempt_idx, stage="cartesian_linear_curobo_ik_descent", backend="curobo_right_arm")
+        tracker.enter(
+            "GRASP",
+            attempt_index=attempt_idx,
+            stage="tcp_position_servo_descent" if bool(args_cli.curobo_grasp_servo_descent) else "cartesian_linear_curobo_ik_descent",
+            backend="isaaclab_position_ik" if bool(args_cli.curobo_grasp_servo_descent) else "curobo_right_arm",
+        )
         primitive_grasp_tcp_pose_w = np.asarray(primitive["tcp_grasp"], dtype=np.float32).reshape(4, 4)
         descent_start_tcp_pose_w = tcp_pose_matrix(robot, ee_body_id).astype(np.float32)
         vertical_grasp_tcp_pose_w = descent_start_tcp_pose_w.copy()
@@ -10715,63 +10916,119 @@ def execute_curobo_right_arm_attempt(
             pose_w[1, 3] = float(descent_start_tcp_pose_w[1, 3])
             pose_w[2, 3] = float((1.0 - alpha) * descent_start_tcp_pose_w[2, 3] + alpha * vertical_grasp_tcp_pose_w[2, 3])
             descent_tcp_waypoints_w.append(pose_w.astype(np.float32))
-        descent_tcp_waypoints_b = [world_pose_to_robot_base_pose(robot, pose_w) for pose_w in descent_tcp_waypoints_w]
-        refresh_curobo_world()
-        start_q = robot.data.joint_pos[0, curobo_entity_cfg.joint_ids].detach().cpu().numpy().astype(np.float32)
-        ik_chain_plan: CuroboPlanResult = curobo_planner.solve_ik_chain_for_poses(
-            start_q,
-            descent_tcp_waypoints_b,
-            return_seeds=int(args_cli.curobo_cartesian_descent_return_seeds),
-            max_waypoint_joint_l2_rad=float(args_cli.curobo_cartesian_descent_max_waypoint_joint_l2_rad),
-            position_only=False,
-        )
-        descent_min_steps = max(
-            int(args_cli.trajectory_steps),
-            max(1, int(ik_chain_plan.joint_positions.shape[0])) * max(1, int(args_cli.curobo_cartesian_descent_steps_per_waypoint)),
-        )
-        if bool(ik_chain_plan.success):
-            grasp_segment = run_curobo_joint_trajectory(
+        descent_min_steps = max(int(args_cli.trajectory_steps), waypoint_count * max(1, int(args_cli.curobo_cartesian_descent_steps_per_waypoint)))
+        proximity_stop_distance = float(args_cli.curobo_grasp_servo_stop_distance_m)
+        if not math.isfinite(proximity_stop_distance) or proximity_stop_distance <= 0.0:
+            proximity_stop_distance = float(args_cli.mind_sort_gripper_proximity_assist_max_distance_m)
+        if bool(args_cli.curobo_grasp_servo_descent):
+            grasp_segment = run_tcp_position_servo_descent(
                 sim,
                 scene,
                 robot,
+                position_ik_controller,
                 curobo_entity_cfg,
-                ik_chain_plan.joint_positions,
-                min_steps=descent_min_steps,
+                ee_body_id,
+                ee_jacobi_idx,
+                vertical_grasp_tcp_pose_w,
+                primitive_grasp_tcp_pose_w[:3, 3],
+                descent_min_steps,
                 gripper=gripper,
                 gripper_width=open_width,
                 locked_root_pose_w=locked_root_pose_w,
-                target_tcp_pose_w=vertical_grasp_tcp_pose_w,
-                max_joint_step_override=float(args_cli.curobo_cartesian_descent_max_joint_step),
-                cartesian_lock_xy_w=descent_start_tcp_pose_w[:2, 3],
-                max_cartesian_xy_error_m=float(args_cli.curobo_cartesian_descent_max_xy_error_m),
-                abort_on_cartesian_xy_error=True,
+                debug_target_pose_w=primitive["tcp_grasp"],
+                proximity_stop_distance_m=proximity_stop_distance,
+                max_joint_step=float(args_cli.curobo_cartesian_descent_max_joint_step),
             )
             local_error = float(grasp_segment.get("final_tcp_pos_error_m", grasp_segment.get("final_pos_error_m", float("inf"))))
+            ik_chain_plan = SimpleNamespace(success=None, reason="skipped_for_position_only_servo_descent", metadata={})
+            executable_descent_waypoints = 0
+            executed_partial_chain = False
         else:
-            grasp_segment = {
-                "final_pos_error_m": float("inf"),
-                "final_tcp_pos_error_m": float("inf"),
-                "position_error_reference": "tcp",
-                "executed_steps": 0,
-                "aborted": True,
-                "abort_reason": ik_chain_plan.reason,
-            }
-            local_error = float("inf")
+            descent_tcp_waypoints_b = [world_pose_to_robot_base_pose(robot, pose_w) for pose_w in descent_tcp_waypoints_w]
+            refresh_curobo_world()
+            start_q = robot.data.joint_pos[0, curobo_entity_cfg.joint_ids].detach().cpu().numpy().astype(np.float32)
+            ik_chain_plan = curobo_planner.solve_ik_chain_for_poses_sequential(
+                start_q,
+                descent_tcp_waypoints_b,
+                return_seeds=int(args_cli.curobo_cartesian_descent_return_seeds),
+                max_waypoint_joint_l2_rad=float(args_cli.curobo_cartesian_descent_max_waypoint_joint_l2_rad),
+                position_only=bool(args_cli.curobo_cartesian_descent_position_only),
+            )
+            executable_joint_positions = np.asarray(ik_chain_plan.joint_positions, dtype=np.float32).reshape(-1, len(curobo_entity_cfg.joint_ids))
+            executable_descent_waypoints = int(executable_joint_positions.shape[0])
+            executed_partial_chain = bool((not bool(ik_chain_plan.success)) and executable_descent_waypoints > 0)
+            descent_min_steps = max(
+                int(args_cli.trajectory_steps),
+                max(1, executable_descent_waypoints) * max(1, int(args_cli.curobo_cartesian_descent_steps_per_waypoint)),
+            )
+            if bool(ik_chain_plan.success) or executed_partial_chain:
+                grasp_segment = run_curobo_joint_trajectory(
+                    sim,
+                    scene,
+                    robot,
+                    curobo_entity_cfg,
+                    executable_joint_positions,
+                    min_steps=descent_min_steps,
+                    gripper=gripper,
+                    gripper_width=open_width,
+                    locked_root_pose_w=locked_root_pose_w,
+                    target_tcp_pose_w=vertical_grasp_tcp_pose_w,
+                    max_joint_step_override=float(args_cli.curobo_cartesian_descent_max_joint_step),
+                    cartesian_lock_xy_w=descent_start_tcp_pose_w[:2, 3],
+                    max_cartesian_xy_error_m=float(args_cli.curobo_cartesian_descent_max_xy_error_m),
+                    abort_on_cartesian_xy_error=True,
+                    object_target_tcp_w=primitive_grasp_tcp_pose_w[:3, 3],
+                    proximity_stop_distance_m=proximity_stop_distance,
+                )
+                local_error = float(grasp_segment.get("final_tcp_pos_error_m", grasp_segment.get("final_pos_error_m", float("inf"))))
+            else:
+                grasp_segment = {
+                    "final_pos_error_m": float("inf"),
+                    "final_tcp_pos_error_m": float("inf"),
+                    "position_error_reference": "tcp",
+                    "executed_steps": 0,
+                    "aborted": True,
+                    "abort_reason": ik_chain_plan.reason,
+                }
+                local_error = float("inf")
         vertical_xy = vertical_grasp_tcp_pose_w[:2, 3].astype(np.float32)
         object_xy = primitive_grasp_tcp_pose_w[:2, 3].astype(np.float32)
+        descent_reached_proximity = bool(grasp_segment.get("reached_proximity_stop", False))
+        precise_reached = bool(math.isfinite(local_error) and local_error <= float(final_grasp_threshold_m))
+        if bool(args_cli.curobo_grasp_servo_descent):
+            descent_motion_backend = "isaaclab_position_only_tcp_servo_after_curobo_pregrasp"
+            descent_orientation_mode = "position_only_tcp_servo_current_wrist_orientation"
+            descent_orientation_policy = "Experimental servo descent ignores exact object axes; it commands TCP position only and keeps the current wrist orientation from hover."
+        elif bool(args_cli.curobo_cartesian_descent_position_only):
+            descent_motion_backend = "curobo_position_only_cartesian_ik_chain_after_curobo_pregrasp"
+            descent_orientation_mode = "position_only_curobo_cartesian_straight_line_hold_hover_preference"
+            descent_orientation_policy = "Final descent solves a cuRobo position-only batch IK chain in the gripper TCP frame: waypoint X/Y are locked to the actual hover gripper TCP, only world Z changes, and solution scoring preserves the hover wrist posture without requiring exact axis alignment."
+        else:
+            descent_motion_backend = "curobo_dense_cartesian_ik_chain_after_curobo_pregrasp"
+            descent_orientation_mode = "full_pose_curobo_cartesian_straight_line_hold_hover_gripper_tcp_orientation"
+            descent_orientation_policy = "Final descent solves a cuRobo full-pose batch IK chain in the gripper TCP frame: waypoint X/Y/quaternion are locked to the actual hover gripper TCP, and only world Z changes."
         grasp_segment.update(
             {
                 "name": "grasp_cartesian_linear_curobo_ik_descent",
-                "motion_backend": "curobo_dense_cartesian_ik_chain_after_curobo_pregrasp",
+                "motion_backend": descent_motion_backend,
                 "curobo_final_grasp_planning_skipped": True,
-                "curobo_final_grasp_planning_skip_reason": "The low grasp segment is constrained to a dense Cartesian vertical descent; no low table-near free-space cuRobo replanning is allowed.",
-                "curobo_cartesian_ik_chain_success": bool(ik_chain_plan.success),
+                "curobo_final_grasp_planning_skip_reason": "The low grasp segment is constrained to a vertical descent; no low table-near free-space cuRobo replanning is allowed.",
+                "curobo_cartesian_ik_chain_success": None if bool(args_cli.curobo_grasp_servo_descent) else bool(ik_chain_plan.success),
                 "curobo_cartesian_ik_chain_reason": ik_chain_plan.reason,
                 "curobo_cartesian_ik_chain_metadata": ik_chain_plan.metadata,
+                "curobo_cartesian_descent_position_only": bool(args_cli.curobo_cartesian_descent_position_only),
+                "curobo_cartesian_ik_chain_partial_execution": bool(executed_partial_chain),
+                "curobo_cartesian_executable_waypoints": int(executable_descent_waypoints),
+                "servo_descent_enabled": bool(args_cli.curobo_grasp_servo_descent),
+                "servo_descent_policy": "position-only closed-loop TCP servo; stop when target reached or TCP enters gripper proximity range",
+                "servo_proximity_stop_distance_m": float(proximity_stop_distance),
+                "servo_reached_proximity_stop": descent_reached_proximity if bool(args_cli.curobo_grasp_servo_descent) else False,
+                "descent_reached_proximity_stop": descent_reached_proximity,
+                "servo_reached_precise_vertical_target": precise_reached,
                 "extra_convergence_disabled": True,
-                "orientation_constraint_mode": "full_pose_curobo_cartesian_straight_line_hold_hover_gripper_tcp_orientation",
+                "orientation_constraint_mode": descent_orientation_mode,
                 "axis_alignment_required": False,
-                "orientation_policy": "Final descent solves a cuRobo full-pose batch IK chain in the gripper TCP frame: waypoint X/Y/quaternion are locked to the actual hover gripper TCP, and only world Z changes.",
+                "orientation_policy": descent_orientation_policy,
                 "fixed_tcp_rotation_world": descent_start_tcp_pose_w[:3, :3].astype(float).tolist(),
                 "descent_start_tcp_world_m": descent_start_tcp_pose_w[:3, 3].astype(float).tolist(),
                 "object_grasp_target_tcp_world_m": primitive_grasp_tcp_pose_w[:3, 3].astype(float).tolist(),
@@ -10797,16 +11054,11 @@ def execute_curobo_right_arm_attempt(
                 "base_error_threshold_m": float(args_cli.grasp_error_threshold_m),
                 "error_threshold_m": float(final_grasp_threshold_m),
                 "candidate_width_m": float(candidate.width),
-                "converged": bool(
-                    bool(ik_chain_plan.success)
-                    and not bool(grasp_segment.get("aborted", False))
-                    and math.isfinite(local_error)
-                    and local_error <= float(final_grasp_threshold_m)
-                ),
+                "converged": bool((precise_reached or descent_reached_proximity) and not bool(grasp_segment.get("aborted", False))),
             }
         )
         ok = bool(grasp_segment["converged"])
-        reason = "" if ok else (grasp_segment.get("abort_reason") or "cuRobo Cartesian straight-line descent error exceeded threshold; stopping before gripper close.")
+        reason = "" if ok else (grasp_segment.get("abort_reason") or "Cartesian final descent did not reach the target/proximity threshold; stopping before gripper close.")
     else:
         ok, grasp_segment, reason = plan_and_run_stage(
             "grasp_curobo",
@@ -15552,6 +15804,8 @@ def run_mind_sort_demo(sim: SimulationContext, scene: InteractiveScene, run_dir:
             "motion_backend": str(args_cli.arm_motion_backend),
             "motion_profile": STABLE_GRASP_MOTION_PROFILE if args_cli.arm_motion_backend == "local_position_primitive" else str(args_cli.arm_motion_backend),
             "curobo_grasp_local_tcp_descent": bool(args_cli.curobo_grasp_local_tcp_descent),
+            "curobo_grasp_servo_descent": bool(args_cli.curobo_grasp_servo_descent),
+            "curobo_grasp_servo_stop_distance_m": float(args_cli.curobo_grasp_servo_stop_distance_m),
             "curobo_lift_local_tcp_ascent": bool(args_cli.curobo_lift_local_tcp_ascent),
             "gripper_post_close_hold_steps": int(args_cli.gripper_post_close_hold_steps),
             "curobo_prefer_kuavo_seed_for_position_only": bool(args_cli.curobo_prefer_kuavo_seed_for_position_only),
@@ -15563,7 +15817,7 @@ def run_mind_sort_demo(sim: SimulationContext, scene: InteractiveScene, run_dir:
                 "graspnet_baseline_v28_target_mask_current_standpoint_rgbd_to_curobo_position_only"
                 if str(args_cli.mind_sort_grasp_proposal) == "graspnet_baseline"
                 else (
-                    "v28_rgbd_directionless_envelope_max_open_fixed_jaw_curobo_hover_then_cartesian_descent"
+                    "v28_rgbd_directionless_envelope_max_open_fixed_jaw_curobo_hover_then_position_servo_descent"
                     if bool(args_cli.rgbd_top_grasp_directionless_envelope)
                     else "v28_rgbd_top_grasp_pca_jaw_axis_to_kuavo_seed_curobo_hover_then_fixed_wrist_vertical_descent"
                 )

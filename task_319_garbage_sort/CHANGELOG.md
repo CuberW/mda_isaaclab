@@ -54,6 +54,17 @@ Change:
   gripper, the mind-sort drop state aligns the carried object to the selected
   bin opening and records the category/bin/drop-pose mapping plus TCP/bin
   alignment diagnostics in metadata.
+- Final grasp descent stays in cuRobo by default: cuRobo plans to the hover
+  pose, then solves a position-only Cartesian IK chain for the vertical descent.
+  The chain locks the actual hover TCP X/Y, only lowers world Z, executes any
+  valid continuous prefix if a lower waypoint fails, and stops once the gripper
+  TCP enters the 2 cm object proximity gate. The experimental IsaacLab
+  position-only servo is kept behind `--curobo_grasp_servo_descent` but is no
+  longer the default because it can let the wrist orientation drift.
+- Follow-up: the final cuRobo descent IK chain is now solved sequentially, not
+  as one independent batch. Each 2 mm waypoint uses the previous waypoint's
+  joint solution as its seed, preventing redundant right-arm IK branch jumps
+  during the last vertical approach.
 - Dynamic table-standpoint navigation now treats `SUCCEEDED_FINAL_DOCK_PARTIAL`
   as a soft Nav2 success and lets the existing pre-grasp standpoint error gate
   decide whether the robot is close enough to continue. This avoids aborting
