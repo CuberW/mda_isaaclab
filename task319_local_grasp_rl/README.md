@@ -77,22 +77,22 @@ Reward terms encourage the full grasp loop, not just reaching the target:
 Fast smoke test:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task319_local_grasp_rl/train.py --task319_quick_test
+cd mda_isaaclab
+python task319_local_grasp_rl/train.py --task319_quick_test
 ```
 
 Longer training:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task319_local_grasp_rl/train.py --headless --num_envs 256 --max_iterations 1500
+cd mda_isaaclab
+python task319_local_grasp_rl/train.py --headless --num_envs 256 --max_iterations 1500
 ```
 
 SAC training:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task319_local_grasp_rl/train.py --algorithm SAC --headless --num_envs 256
+cd mda_isaaclab
+python task319_local_grasp_rl/train.py --algorithm SAC --headless --num_envs 256
 ```
 
 With SAC, `--max_iterations` is interpreted as environment steps because SAC is off-policy and has no PPO rollout length.
@@ -126,7 +126,7 @@ keys.
 Then run:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task319_local_grasp_rl/train.py --headless --num_envs 256 --max_iterations 1500 --wandb
+python task319_local_grasp_rl/train.py --headless --num_envs 256 --max_iterations 1500 --wandb
 ```
 
 You can also override from CLI:
@@ -146,7 +146,7 @@ task319_local_grasp_rl/agents/skrl_ppo_cfg.yaml
 After training, run a checkpoint:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task319_local_grasp_rl/play.py --checkpoint /abs/path/to/checkpoint.pt --num_envs 16
+python task319_local_grasp_rl/play.py --checkpoint path/to/checkpoint.pt --num_envs 16
 ```
 
 ## Integration Plan

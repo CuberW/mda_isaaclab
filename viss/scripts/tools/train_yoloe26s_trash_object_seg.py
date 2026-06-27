@@ -20,14 +20,21 @@ except Exception as e:
 from ultralytics import YOLO
 
 def main():
+    workspace = os.environ.get("TRASHBOT_WS", os.getcwd())
     # Load model from the local weights path
-    weights_path = '/home/robot/trashbot_ws/models/yoloe-26s-seg.pt'
+    weights_path = os.environ.get(
+        "YOLOE_INIT_WEIGHTS",
+        os.path.join(workspace, "viss/models/yoloe-26s-seg.pt"),
+    )
     print(f"Loading initial YOLOE model weights from {weights_path}...")
     model = YOLO(weights_path)
     
     # Train parameters
     train_args = {
-        'data': '/home/robot/trashbot_ws/datasets/trash_object_yoloe_seg/data.yaml',
+        'data': os.environ.get(
+            "TRASH_YOLO_DATA",
+            os.path.join(workspace, "datasets/trash_object_yoloe_seg/data.yaml"),
+        ),
         'epochs': 50,
         'imgsz': 640,
         'batch': 16,     # RTX 4090 has 24GB VRAM, batch 16 is extremely safe and stable
@@ -36,7 +43,7 @@ def main():
         'patience': 20,
         'cache': False,
         'amp': False,    # Disable AMP to avoid c10::Half != float mismatch
-        'project': '/home/robot/trashbot_ws/runs',
+        'project': os.environ.get("YOLO_RUNS_DIR", os.path.join(workspace, "viss/runs")),
         'name': 'yoloe_trash_object_seg',
         'exist_ok': True
     }

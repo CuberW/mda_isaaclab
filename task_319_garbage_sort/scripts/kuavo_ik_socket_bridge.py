@@ -20,6 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=31975)
     parser.add_argument("--service", default="/ik/two_arm_hand_pose_cmd_srv_muli_refer")
+    parser.add_argument("--fk-service", default="/ik/fk_srv")
     parser.add_argument("--service-timeout-s", type=float, default=2.0)
     parser.add_argument("--node-name", default="task319_kuavo_ik_socket_bridge")
     return parser.parse_args()
@@ -91,9 +92,38 @@ def solve_request(payload: dict[str, Any], args: argparse.Namespace, rospy: Any,
     }
 
 
+def fk_request(payload: dict[str, Any], args: argparse.Namespace, rospy: Any, fk_srv_type: Any) -> dict[str, Any]:
+    service_name = str(payload.get("service") or args.fk_service)
+    q = [float(item) for item in payload.get("q", [])]
+    rospy.wait_for_service(service_name, timeout=float(args.service_timeout_s))
+    proxy = rospy.ServiceProxy(service_name, fk_srv_type)
+    response = proxy(q)
+    hand_poses = response.hand_poses
+    return {
+        "type": "fk_result",
+        "label": payload.get("label", ""),
+        "service": service_name,
+        "success": bool(response.success),
+        "q_len": len(q),
+        "hand_poses": {
+            "left_pose": {
+                "pos_xyz": [float(item) for item in hand_poses.left_pose.pos_xyz],
+                "quat_xyzw": [float(item) for item in hand_poses.left_pose.quat_xyzw],
+                "joint_angles": [float(item) for item in hand_poses.left_pose.joint_angles],
+            },
+            "right_pose": {
+                "pos_xyz": [float(item) for item in hand_poses.right_pose.pos_xyz],
+                "quat_xyzw": [float(item) for item in hand_poses.right_pose.quat_xyzw],
+                "joint_angles": [float(item) for item in hand_poses.right_pose.joint_angles],
+            },
+        },
+    }
+
+
 def serve(args: argparse.Namespace) -> None:
     import rospy
     from kuavo_msgs.msg import twoArmHandPoseCmd
+    from kuavo_msgs.srv import fkSrv
     from kuavo_msgs.srv import twoArmHandPoseCmdSrv
 
     rospy.init_node(args.node_name, anonymous=True, disable_signals=True)
@@ -119,15 +149,32 @@ def serve(args: argparse.Namespace) -> None:
                         except Exception as exc:
                             service_available = False
                             service_error = repr(exc)
+                        fk_service_available = True
+                        fk_service_error = ""
+                        try:
+                            rospy.wait_for_service(args.fk_service, timeout=0.1)
+                        except Exception as exc:
+                            fk_service_available = False
+                            fk_service_error = repr(exc)
+                        try:
+                            control_hand_side = rospy.get_param("/control_hand_side")
+                        except Exception:
+                            control_hand_side = None
                         response = {
                             "type": "health",
                             "ok": True,
                             "service": args.service,
                             "service_available": service_available,
                             "service_error": service_error,
+                            "fk_service": args.fk_service,
+                            "fk_service_available": fk_service_available,
+                            "fk_service_error": fk_service_error,
+                            "control_hand_side": control_hand_side,
                         }
                     elif packet_type == "solve":
                         response = solve_request(payload, args, rospy, twoArmHandPoseCmdSrv, twoArmHandPoseCmd)
+                    elif packet_type == "fk":
+                        response = fk_request(payload, args, rospy, fkSrv)
                     else:
                         response = {"type": "error", "error": f"unknown packet type: {packet_type}"}
                 except Exception as exc:

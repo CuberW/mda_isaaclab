@@ -3,7 +3,7 @@
 All commands below use the required `my_task319_safe` environment. Run them from:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 ```
 
 Documentation rule:
@@ -17,7 +17,7 @@ Documentation rule:
 This opens Isaac Sim with the phase-one scene. You should see Kuavo in the URDF zero upright posture, the table, four open bins, and 10 correctly-scaled textured YCB objects on the table.
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/phase1_scene_ros2_bridge.py --disable_lidar
+python task_319_garbage_sort/phase1_scene_ros2_bridge.py --disable_lidar
 ```
 
 Notes:
@@ -31,7 +31,7 @@ Notes:
 This opens Isaac Sim close to the wrist gripper. The robot uses the URDF zero upright posture while the gripper stays open first, then a small red block appears between the finger pads, the gripper closes, and the block remains held.
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/gripper_physics_test.py --smoke_steps 0 --close_start_step 600
+python task_319_garbage_sort/gripper_physics_test.py --smoke_steps 0 --close_start_step 600
 ```
 
 Expected visual sequence:
@@ -42,7 +42,7 @@ Expected visual sequence:
 For a headless metric check instead of visual observation:
 
 ```bash
-timeout 120s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/gripper_physics_test.py --headless --smoke_steps 180
+timeout 120s python task_319_garbage_sort/gripper_physics_test.py --headless --smoke_steps 180
 ```
 
 ## 3. Visible Manipulation-Control Demo: fixed-base arm tracks a smooth target
@@ -50,7 +50,7 @@ timeout 120s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garb
 This opens Isaac Sim with only the robot in an empty scene. The robot starts from the URDF zero upright posture, the base is fixed/locked, navigation is disabled, and the right arm follows a smooth 6D target. Frame markers show current and target end-effector poses.
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/arm_chain_isolated_test.py --smoke_steps 0 --trajectory_steps 720
+python task_319_garbage_sort/arm_chain_isolated_test.py --smoke_steps 0 --trajectory_steps 720
 ```
 
 Expected visual sequence:
@@ -61,7 +61,7 @@ Expected visual sequence:
 For a headless metric check:
 
 ```bash
-timeout 160s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/arm_chain_isolated_test.py --headless --smoke_steps 360
+timeout 160s python task_319_garbage_sort/arm_chain_isolated_test.py --headless --smoke_steps 360
 ```
 
 ## 4A. Default Official Visual Grasp: v28 original on Current Head RGB-D Scene
@@ -75,17 +75,20 @@ Selection policy:
 - For RGB-D centroid fallback, reachability is checked at the same RGB-D geometric center used by the grasp command. Extra object-edge/top probe points are disabled by default and can be restored only for diagnostics with `--no-target_reachability_center_only`.
 - Valid candidates are ranked by weighted score: planner group, IK cost, distance, clutter, depth point quality, VLM confidence, and recent failed-grasp memory.
 - After a successful grasp and drop, `--enable_sort_nav` returns the robot to the home table-front pose through the bin staging and side-corridor waypoints.
-- In the current `--mind_sort_demo` runtime profile, the state machine first
-  attempts physical right-gripper grasp/lift. If physical lift verification
-  fails but the final low-grasp TCP reached the object within the 2 cm gate,
-  `--mind_sort_gripper_proximity_assist` is auto-enabled and the object is
-  carried in the right-gripper TCP frame for demo continuity. Strict physical
-  validation must pass `--no-mind_sort_gripper_proximity_assist`.
+- In the current `--mind_sort_demo` runtime profile, the state machine requires
+  a real physical right-gripper grasp/lift. It does not auto-enable
+  gripper-proximity/suction carry; if the object is not physically lifted, the
+  cycle is recorded as a grasp failure and no object is attached or teleported
+  to the gripper.
 - In the current `--mind_sort_demo` runtime profile, right-arm motion is
-  switched to `curobo_right_arm` unless the command explicitly overrides
-  `--arm_motion_backend`. The older `local_position_primitive` can still be
-  forced for the 20260624 stable debug-cube profile with
-  `--mind_sort_force_stable_grasp_profile`.
+  switched to `kuavo_ik` unless the command explicitly overrides
+  `--arm_motion_backend`. `kuavo_ik` calls the official Kuavo IK service through
+  `/ik/two_arm_hand_pose_cmd_srv`. For local simulation, the default auto-start
+  path runs the socket bridge inside `kuavo_official_ros:/root/kuavo_ws_linux`
+  and calls the official ROS1 IK service directly; the ROS2 dynamic bridge path
+  remains available only as a diagnostic override. The older
+  `local_position_primitive` can still be forced for the 20260624 stable
+  debug-cube profile with `--mind_sort_force_stable_grasp_profile`.
 
 API setup, in the same shell before launching:
 
@@ -98,19 +101,19 @@ export QWEN_API_STYLE='dashscope'
 Qwen API check:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python viss/scripts/perception/yolo11_qwen_perception_offline.py --qwen-api-check --qwen-api-style dashscope
+python viss/scripts/perception/yolo11_qwen_perception_offline.py --qwen-api-check --qwen-api-style dashscope
 ```
 
 GUI visual-grasp test with default v28/Qwen perception and RGB-D centroid grasp:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --post_action_hold_steps 1200
+python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --post_action_hold_steps 1200
 ```
 
 GUI full-chain test: v28 original perception -> RGB-D centroid grasp -> Nav2 to matching bin side -> drop:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --enable_sort_nav --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 150 --post_action_hold_steps 1200
+python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --enable_sort_nav --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 150 --post_action_hold_steps 1200
 ```
 
 Current default mind-sort loop command, using formal v28/Qwen perception,
@@ -118,13 +121,13 @@ dynamic RGB-D station planning, Nav2, cuRobo right-arm motion, and the 2 cm
 gripper-proximity continuation policy:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
+python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
 ```
 
 Strict physical-grasp validation disables the demo carry gate:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo --no-mind_sort_gripper_proximity_assist
+python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo --no-mind_sort_gripper_proximity_assist
 ```
 
 Latest full-loop video demonstration command. This uses the legacy suction flag
@@ -132,7 +135,7 @@ as an alias for the gripper-proximity carry path and is for complete sorting
 video evidence, not physical-gripper acceptance:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py \
+python task_319_garbage_sort/task319_grasp_sort_sm.py \
   --headless \
   --mind_sort_demo \
   --mind_sort_suction_assist \
@@ -149,7 +152,7 @@ video evidence, not physical-gripper acceptance:
 Headless record/debug variant:
 
 ```bash
-timeout 480s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --post_action_hold_steps 0
+timeout 480s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --post_action_hold_steps 0
 ```
 
 Expected debug files in the cycle directory:
@@ -173,11 +176,29 @@ calibration table, and one movable debug cube, then sends the right-arm grasp
 command. Use this when debugging right-arm IK, TCP offset, and unreasonable
 wrist posture without table/trash clutter.
 
+Simplified tabletop-style top-down physical grasp test. This is the preferred
+test for the current "start over from plain grasping" branch: only Kuavo, table,
+one rectangular cuboid, cuRobo right-arm planning, optional Kuavo IK audit/seed,
+PCA short-axis jaw alignment, close, lift, and physical lift verification.
+Do not pass `--headless` if you want to observe it:
+
+```bash
+cd mda_isaaclab
+python task_319_garbage_sort/topdown_cube_grasp_test.py --record_video --object_pos 0.70,-0.16,0.560 --object_size 0.050,0.032,0.040 --object_yaw_deg 25
+```
+
+The public task entrypoint can redirect to the same standalone script:
+
+```bash
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --debug_cube_simple_topdown --record_video --object_pos 0.70,-0.16,0.560 --object_size 0.050,0.032,0.040
+```
+
 Movable truth-source cube calibration with the default cuRobo right-arm adapter:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_pos 0.70,-0.16,0.5625 --arm_motion_backend curobo_right_arm --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 6 --warmup_steps 60 --cycle_interval_steps 1 --trajectory_steps 180 --safe_pregrasp_steps 80 --grasp_steps 100 --lift_steps 120 --hold_steps 40 --max_joint_step 0.02 --post_action_hold_steps 20 --no-gui_realtime_playback
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_pos 0.70,-0.16,0.5625 --arm_motion_backend curobo_right_arm --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 6 --warmup_steps 60 --cycle_interval_steps 1 --trajectory_steps 180 --safe_pregrasp_steps 80 --grasp_steps 100 --lift_steps 120 --hold_steps 40 --max_joint_step 0.02 --post_action_hold_steps 20 --no-gui_realtime_playback
 ```
 
 RGB-D target-source calibration uses the same scene and controller, but drives
@@ -185,8 +206,8 @@ the grasp from the head RGB-D backprojected cube center while still auditing the
 simulator root:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_rgbd_target --debug_cube_isolated_scene --debug_cube_pos 0.70,-0.16,0.5625 --arm_motion_backend curobo_right_arm --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 6 --warmup_steps 60 --cycle_interval_steps 1 --trajectory_steps 180 --safe_pregrasp_steps 80 --grasp_steps 100 --lift_steps 120 --hold_steps 40 --max_joint_step 0.02 --post_action_hold_steps 20 --no-gui_realtime_playback
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_rgbd_target --debug_cube_isolated_scene --debug_cube_pos 0.70,-0.16,0.5625 --arm_motion_backend curobo_right_arm --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 6 --warmup_steps 60 --cycle_interval_steps 1 --trajectory_steps 180 --safe_pregrasp_steps 80 --grasp_steps 100 --lift_steps 120 --hold_steps 40 --max_joint_step 0.02 --post_action_hold_steps 20 --no-gui_realtime_playback
 ```
 
 Expected calibration outputs:
@@ -219,12 +240,88 @@ Notes:
   `x=0.84-0.98` edge-of-workspace targets and confirms the remaining offset is
   mainly IK tracking residual, not gripper URDF geometry.
 
+## 4A-Showcase. Split Physical-Only Video Segments
+
+These commands record separated physical-only showcase clips in the formal
+Task319 main scene: the table, bins, robot, and the normal 10 table objects
+remain present. They do not use suction, gripper-proximity attachment,
+simulated pick, or object teleport during the recorded execution. The default
+showcase target is `trash_battery_0`, the larger hazardous battery block, so the
+clips also preserve the required `有害垃圾` category.
+
+Segment 1, fixed best-position physical clamp/lift. The cube is placed in the
+open gripper as a pre-recording initial condition, then the recorded segment
+shows the gripper-held object being lifted by physical contact:
+
+```bash
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py \
+  --physical_showcase_stage grasp_fixed \
+  --physical_showcase_object trash_battery_0 \
+  --physical_showcase_category 有害垃圾 \
+  --record_video \
+  --video_width 1280 \
+  --video_height 720 \
+  --video_sample_stride 4 \
+  --post_action_hold_steps 120
+```
+
+Segment 2, physically held object navigates to the selected bin side, moves the
+right gripper over the hardcoded bin opening, then opens the gripper:
+
+```bash
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py \
+  --physical_showcase_stage carry_drop \
+  --physical_showcase_object trash_battery_0 \
+  --physical_showcase_category 有害垃圾 \
+  --physical_showcase_start_waypoint table_front \
+  --mind_sort_realistic_bin_drop_demo \
+  --record_video \
+  --video_width 1280 \
+  --video_height 720 \
+  --video_sample_stride 4 \
+  --nav2_goal_timeout_s 180 \
+  --post_action_hold_steps 120
+```
+
+Segment 3, after-drop navigation return to home:
+
+```bash
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py \
+  --physical_showcase_stage return_home \
+  --physical_showcase_object trash_battery_0 \
+  --physical_showcase_category 有害垃圾 \
+  --mind_sort_realistic_bin_drop_demo \
+  --record_video \
+  --video_width 1280 \
+  --video_height 720 \
+  --video_sample_stride 4 \
+  --nav2_goal_timeout_s 180 \
+  --post_action_hold_steps 120
+```
+
+Expected outputs:
+- `physical_showcase/<stage>/physical_showcase_metadata.json`
+- `physical_showcase/<stage>/fsm_trace.json`
+- `external_grasp_demo.mp4`
+- `latest_cycle.json`
+
+The metadata fields `physical_only`, `attachment_used`, `suction_assist`,
+`gripper_proximity_assist`, `simulated_pick`, and
+`object_teleport_used_during_recording` should confirm the recorded segment did
+not use the previous assisted carry path. The field
+`uses_main_scene_table_objects` should be `true`; if it is `false`, the command
+has fallen back to the debug-cube scene and is not the requested main-scene
+showcase.
+
 Experimental waist/leg whole-body IK assist checks:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_static --debug_cube_pos 0.70,-0.16,0.5625 --whole_body_ik_assist waist --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --grasp_steps 220 --lift_steps 260 --hold_steps 160 --max_joint_step 0.010 --post_action_hold_steps 240 --no-gui_realtime_playback
+python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_static --debug_cube_pos 0.70,-0.16,0.5625 --whole_body_ik_assist waist --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --grasp_steps 220 --lift_steps 260 --hold_steps 160 --max_joint_step 0.010 --post_action_hold_steps 240 --no-gui_realtime_playback
 
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_static --debug_cube_pos 0.70,-0.16,0.5625 --whole_body_ik_assist waist_leg --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --grasp_steps 220 --lift_steps 260 --hold_steps 160 --max_joint_step 0.010 --post_action_hold_steps 240 --no-gui_realtime_playback
+python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_static --debug_cube_pos 0.70,-0.16,0.5625 --whole_body_ik_assist waist_leg --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --grasp_steps 220 --lift_steps 260 --hold_steps 160 --max_joint_step 0.010 --post_action_hold_steps 240 --no-gui_realtime_playback
 ```
 
 Result summary:
@@ -250,7 +347,7 @@ Conservative torso pre-shape assist, with right-arm TCP execution kept as the
 formal grasp controller:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_static --debug_cube_pos 0.70,-0.16,0.5625 --whole_body_ik_assist off --torso_preshape_assist --torso_preshape_probe_steps 60 --torso_preshape_move_steps 100 --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 60 --cycle_interval_steps 1 --trajectory_steps 260 --grasp_steps 120 --lift_steps 160 --hold_steps 80 --max_joint_step 0.010 --post_action_hold_steps 80 --no-gui_realtime_playback
+python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_static --debug_cube_pos 0.70,-0.16,0.5625 --whole_body_ik_assist off --torso_preshape_assist --torso_preshape_probe_steps 60 --torso_preshape_move_steps 100 --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 60 --cycle_interval_steps 1 --trajectory_steps 260 --grasp_steps 120 --lift_steps 160 --hold_steps 80 --max_joint_step 0.010 --post_action_hold_steps 80 --no-gui_realtime_playback
 ```
 
 Result summary:
@@ -275,22 +372,22 @@ validation.
 GUI mainline command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
 ```
 
 Strict physical-grasp command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo --no-mind_sort_gripper_proximity_assist
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo --no-mind_sort_gripper_proximity_assist
 ```
 
 Explicit navigation-display command without physical grasp:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo --mind_sort_simulated_pick
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo --mind_sort_simulated_pick
 ```
 
 Expected debug files:
@@ -321,14 +418,14 @@ Retired. Do not use this for current Task319 work. The current mainline is secti
 Dependency/model check before strict mode:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/scripts/prepare_grasp_deps.py --download_missing_models
+python task_319_garbage_sort/scripts/prepare_grasp_deps.py --download_missing_models
 ```
 
 Headless strict visual-grasp acceptance command using GraspNet:
 
 ```bash
 export GLM_API_KEY='your GLM API key'
-timeout 420s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --strict_model_chain --record_debug --record_video --vlm_model glm-5v-turbo --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --mask_distance_threshold_m 0.02 --min_filtered_grasps 8 --ik_prescreen_top_k 20 --ik_prescreen_max_joint_delta_rad 4.5 --max_grasp_retries 3 --pregrasp_error_threshold_m 0.07 --grasp_error_threshold_m 0.06 --lift_error_threshold_m 0.08
+timeout 420s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --strict_model_chain --record_debug --record_video --vlm_model glm-5v-turbo --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --mask_distance_threshold_m 0.02 --min_filtered_grasps 8 --ik_prescreen_top_k 20 --ik_prescreen_max_joint_delta_rad 4.5 --max_grasp_retries 3 --pregrasp_error_threshold_m 0.07 --grasp_error_threshold_m 0.06 --lift_error_threshold_m 0.08
 ```
 
 Expected result:
@@ -340,20 +437,20 @@ GUI strict visual-grasp command using GraspNet:
 
 ```bash
 export GLM_API_KEY='your GLM API key'
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --execute_grasp --strict_model_chain --record_debug --record_video --vlm_model glm-5v-turbo --target_object_name potted --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --post_action_hold_steps 1200
+python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --execute_grasp --strict_model_chain --record_debug --record_video --vlm_model glm-5v-turbo --target_object_name potted --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --post_action_hold_steps 1200
 ```
 
 Headless motion-evidence video command without VLM/GraspNet dependencies:
 
 ```bash
-timeout 360s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --skip_vlm --skip_graspnet --use_centroid_fallback --target_object_name potted --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010
+timeout 360s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --skip_vlm --skip_graspnet --use_centroid_fallback --target_object_name potted --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010
 ```
 
 GUI strict visual grasp + experimental bin-drop navigation:
 
 ```bash
 export GLM_API_KEY='your GLM API key'
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --execute_grasp --strict_model_chain --enable_sort_nav --record_debug --vlm_model glm-5v-turbo --target_object_name potted
+python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --execute_grasp --strict_model_chain --enable_sort_nav --record_debug --vlm_model glm-5v-turbo --target_object_name potted
 ```
 
 Notes:
@@ -370,7 +467,7 @@ Notes:
 Direct ROS2 `/cmd_vel` Isaac-control demo:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
+python \
   task_319_garbage_sort/task319_grasp_sort_sm.py \
   --ros_cmd_vel_demo \
   --record_debug \
@@ -386,7 +483,7 @@ Direct ROS2 `/cmd_vel` Isaac-control demo:
 Headless ROS2 `/cmd_vel` verification:
 
 ```bash
-timeout 480s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
+timeout 480s python \
   task_319_garbage_sort/task319_grasp_sort_sm.py \
   --headless \
   --ros_cmd_vel_demo \
@@ -414,7 +511,7 @@ ROS2 `/cmd_vel` notes:
 Motion-only ROS2/Nav2 sorting demo:
 
 ```bash
-timeout 700s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
+timeout 700s python \
   task_319_garbage_sort/task319_grasp_sort_sm.py \
   --headless \
   --motion_only_sort_demo \
@@ -436,7 +533,7 @@ Motion-only Nav2 notes:
 Important waypoint Nav2 kinematic baseline:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
+python \
   task_319_garbage_sort/task319_grasp_sort_sm.py \
   --waypoint_nav_demo \
   --waypoint_route home,table_left,bin_center,table_right,home \
@@ -453,7 +550,7 @@ Important waypoint Nav2 kinematic baseline:
 Headless waypoint kinematic-baseline verification:
 
 ```bash
-timeout 900s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
+timeout 900s python \
   task_319_garbage_sort/task319_grasp_sort_sm.py \
   --headless \
   --waypoint_nav_demo \
@@ -470,7 +567,7 @@ timeout 900s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
 Stable URDF-diagonal waypoint Nav2 demo:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
+python \
   task_319_garbage_sort/task319_grasp_sort_sm.py \
   --waypoint_nav_demo \
   --waypoint_route home,table_left \
@@ -490,7 +587,7 @@ Stable URDF-diagonal waypoint Nav2 demo:
 Headless stable URDF-diagonal waypoint verification:
 
 ```bash
-timeout 720s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
+timeout 720s python \
   task_319_garbage_sort/task319_grasp_sort_sm.py \
   --headless \
   --waypoint_nav_demo \
@@ -511,7 +608,7 @@ timeout 720s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
 Dynamic table-side standpoint Nav2 demo:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
+python \
   task_319_garbage_sort/task319_grasp_sort_sm.py \
   --dynamic_standpoint_nav_demo \
   --dynamic_target_world_xyz 1.20,0.00,0.60 \
@@ -532,7 +629,7 @@ Dynamic table-side standpoint Nav2 demo:
 Headless dynamic table-side standpoint verification:
 
 ```bash
-timeout 720s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
+timeout 720s python \
   task_319_garbage_sort/task319_grasp_sort_sm.py \
   --headless \
   --dynamic_standpoint_nav_demo \
@@ -561,7 +658,7 @@ Dynamic standpoint notes:
 Main visual-chain standpoint Nav2 verification, without grasping:
 
 ```bash
-timeout 420s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
+timeout 420s python \
   task_319_garbage_sort/task319_grasp_sort_sm.py \
   --headless \
   --num_cycles 1 \
@@ -593,8 +690,8 @@ that pose to Nav2, saves `pre_grasp_standpoint_nav.json`, then re-shoots under
 Mind-sort physical-grasp mainline:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
 ```
 
 This is the delivery command for the current mind-sort mainline. It combines the
@@ -620,7 +717,7 @@ Waypoint notes:
 Official Isaac wheeled-controller diagnostic:
 
 ```bash
-timeout 260s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
+timeout 260s python \
   task_319_garbage_sort/official_holonomic_wheel_test.py \
   --headless \
   --record_debug \
@@ -635,7 +732,7 @@ timeout 260s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
 Wheel open-loop sanity check:
 
 ```bash
-timeout 600s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
+timeout 600s python \
   task_319_garbage_sort/task319_grasp_sort_sm.py \
   --headless \
   --wheel_open_loop_demo \
@@ -673,14 +770,14 @@ source task_319_garbage_sort/scripts/setup_nav2_user_install.bash
 Fallback physical-grasp comparison command:
 
 ```bash
-timeout 300s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --skip_vlm --skip_graspnet --use_centroid_fallback --target_object_name potted --record_debug --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010
+timeout 300s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --skip_vlm --skip_graspnet --use_centroid_fallback --target_object_name potted --record_debug --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010
 ```
 
 AnyGrasp experimental command after installing the licensed SDK assets:
 
 ```bash
 export GLM_API_KEY='your GLM API key'
-timeout 420s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --strict_model_chain --grasp_backend anygrasp --record_debug --record_video --vlm_model glm-5v-turbo --target_object_name potted --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --mask_distance_threshold_m 0.02 --min_filtered_grasps 8 --ik_prescreen_top_k 20 --ik_prescreen_max_joint_delta_rad 4.5 --max_grasp_retries 3 --pregrasp_error_threshold_m 0.07 --grasp_error_threshold_m 0.06 --lift_error_threshold_m 0.08 --anygrasp_grasp_to_tcp 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1
+timeout 420s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --strict_model_chain --grasp_backend anygrasp --record_debug --record_video --vlm_model glm-5v-turbo --target_object_name potted --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.010 --mask_distance_threshold_m 0.02 --min_filtered_grasps 8 --ik_prescreen_top_k 20 --ik_prescreen_max_joint_delta_rad 4.5 --max_grasp_retries 3 --pregrasp_error_threshold_m 0.07 --grasp_error_threshold_m 0.06 --lift_error_threshold_m 0.08 --anygrasp_grasp_to_tcp 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1
 ```
 
 AnyGrasp notes:
@@ -688,7 +785,7 @@ AnyGrasp notes:
 - The dependency checker reports the required SDK folder, checkpoint, `gsnet`/`lib_cxx` binaries, license folder, MinkowskiEngine status, and OpenSSL 1.1 runtime status. Add `--require_anygrasp` to fail the check when any AnyGrasp asset is missing:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/scripts/prepare_grasp_deps.py --prepare_anygrasp_binaries --require_anygrasp
+python task_319_garbage_sort/scripts/prepare_grasp_deps.py --prepare_anygrasp_binaries --require_anygrasp
 ```
 
 Each cycle writes:
@@ -722,27 +819,27 @@ GUI repeat mode for visual inspection:
 
 ```bash
 export GLM_API_KEY='your GLM API key'
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/visual_grasp_record_demo.py --num_cycles 0 --cycle_interval_steps 240 --vlm_model glm-5v-turbo
+python task_319_garbage_sort/visual_grasp_record_demo.py --num_cycles 0 --cycle_interval_steps 240 --vlm_model glm-5v-turbo
 ```
 
 One visible grasp attempt:
 
 ```bash
 export GLM_API_KEY='your GLM API key'
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/visual_grasp_record_demo.py --num_cycles 1 --execute_grasp --vlm_model glm-5v-turbo --graspnet_num_point 8000
+python task_319_garbage_sort/visual_grasp_record_demo.py --num_cycles 1 --execute_grasp --vlm_model glm-5v-turbo --graspnet_num_point 8000
 ```
 
 Headless one-cycle verification:
 
 ```bash
 export GLM_API_KEY='your GLM API key'
-timeout 180s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/visual_grasp_record_demo.py --headless --num_cycles 1 --warmup_steps 80 --cycle_interval_steps 30 --vlm_model glm-5v-turbo --graspnet_num_point 4096
+timeout 180s python task_319_garbage_sort/visual_grasp_record_demo.py --headless --num_cycles 1 --warmup_steps 80 --cycle_interval_steps 30 --vlm_model glm-5v-turbo --graspnet_num_point 4096
 ```
 
 Fast RGB-D + YOLO check without network/API calls:
 
 ```bash
-timeout 120s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/visual_grasp_record_demo.py --headless --num_cycles 1 --skip_vlm --skip_graspnet
+timeout 120s python task_319_garbage_sort/visual_grasp_record_demo.py --headless --num_cycles 1 --skip_vlm --skip_graspnet
 ```
 
 Each cycle writes:
@@ -778,7 +875,7 @@ Notes:
 This does not open Isaac Sim. It verifies target selection, waste classification, mask filtering, and grasp selection.
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/visual_grasp_pipeline.py --dry_run_graspnet
+python task_319_garbage_sort/visual_grasp_pipeline.py --dry_run_graspnet
 ```
 
 ## 7. Dependency / Model Check
@@ -786,5 +883,5 @@ This does not open Isaac Sim. It verifies target selection, waste classification
 This confirms GraspNet, YOLO, CUDA extensions, and optional LLM dependencies are present.
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/scripts/prepare_grasp_deps.py
+python task_319_garbage_sort/scripts/prepare_grasp_deps.py
 ```

@@ -1,6 +1,22 @@
 # Task319 current mainline does not load these local optional model assets.
 # Keep models/yolo/yolov8m-seg.pt, models/graspnet-rs/checkpoint-rs.tar,
 # and optional models/anygrasp/checkpoint_detection.tar available for legacy/debug paths.
+
+# Secrets and machine-local runtime configuration. Keep committed examples
+# with placeholder values only.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*credentials*
+*secret*
+*token*
+viss/.env
+viss/.env.*
+!viss/.env.example
+
 /models/grounding-dino-base/
 /models/dinov2-base/
 /models/clip-vit-b32/
@@ -10,6 +26,9 @@
 /models/keepitsimple/
 /models/yolov8n.pt
 /models/yolov8s-worldv2.pt
+/models/yolo/*.pt
+/models/graspnet-rs/*.tar
+/viss/models/*.pt
 weights
 IsaacLab
 kuavo-ros-opensource
@@ -20,6 +39,8 @@ kuavo-ros-opensource
 /task_319_garbage_sort/build/
 /task_319_garbage_sort/__pycache__/
 /task_319_garbage_sort/**/*.py[cod]
+/viss/results/
+/viss/runs/
 /backups/task_319_garbage_sort_git_*/
 /backups/robot_git_*/
 /src/nvidia-curobo/
@@ -29,8 +50,11 @@ kuavo-ros-opensource
 /third_party/ReKep/
 /task319_local_grasp_rl/__pycache__/
 /task319_local_grasp_rl/**/*.py[cod]
+/task319_local_grasp_rl/rl_training_analysis/
 /task319_local_grasp_rl/wandb.sh
 /qwen_s.sh
+/d.md
+/theory.md
 /task319_hover_descent_grasp/
 /task319_hover_descent_grasp_sac/
 /task319_local_suction_grasp/

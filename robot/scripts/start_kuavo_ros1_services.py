@@ -47,6 +47,8 @@ def docker_ros(container: str, docker_workspace: str, command: str, *, timeout: 
         "source /opt/ros/noetic/setup.bash && "
         "test -f devel/setup.bash && source devel/setup.bash; "
         "export ROS_MASTER_URI=http://localhost:11311; "
+        "export ROS_IP=127.0.0.1; "
+        "export ROS_HOSTNAME=localhost; "
     )
     return run(["docker", "exec", container, "bash", "-lc", setup + command], timeout=timeout, check=False)
 
@@ -70,9 +72,12 @@ def main() -> int:
     parser.add_argument("--container", default="kuavo_official_ros")
     parser.add_argument("--docker-workspace", default="/root/kuavo_ws_linux")
     parser.add_argument("--robot-version", default="62")
+    parser.add_argument("--control-hand-side", default="1", help="Official motion_capture_ik control_hand_side: 0 left, 1 right, 2 both.")
     parser.add_argument("--skip-arm-trajectory", action="store_true")
     parser.add_argument("--skip-wheel-bridge", action="store_true")
     parser.add_argument("--no-container-restart", action="store_true")
+    parser.add_argument("--ros-ip", default="127.0.0.1")
+    parser.add_argument("--ros-hostname", default="localhost")
     args = parser.parse_args()
 
     urdf_file = (
@@ -100,7 +105,10 @@ def main() -> int:
         )
     docker_bash(
         args.container,
-        "source /opt/ros/noetic/setup.bash && export ROS_MASTER_URI=http://localhost:11311 && "
+        "source /opt/ros/noetic/setup.bash && "
+        "export ROS_MASTER_URI=http://localhost:11311 && "
+        f"export ROS_IP={args.ros_ip} && "
+        f"export ROS_HOSTNAME={args.ros_hostname} && "
         "roscore >/tmp/kuavo_roscore.log 2>&1",
         detached=True,
     )
@@ -113,6 +121,8 @@ def main() -> int:
         "source devel/setup.bash && export ROS_MASTER_URI=http://localhost:11311 && "
         f"export ROSLAUNCH_UUID={run_id} && "
         f"export ROBOT_VERSION={args.robot_version} && "
+        f"export ROS_IP={args.ros_ip} && "
+        f"export ROS_HOSTNAME={args.ros_hostname} && "
     )
 
     docker_bash(
@@ -134,7 +144,8 @@ def main() -> int:
         args.container,
         common
         + f"roslaunch motion_capture_ik ik_node.launch robot_version:={args.robot_version} "
-        "visualize:=false >/tmp/kuavo_ik_node.log 2>&1",
+        + f"control_hand_side:={args.control_hand_side} "
+        + "visualize:=false >/tmp/kuavo_ik_node.log 2>&1",
         detached=True,
     )
     if not args.skip_arm_trajectory:
@@ -200,7 +211,8 @@ def main() -> int:
     docker_bash(
         args.container,
         common
-        + "echo NODES; rosnode list; echo SERVICES; "
+        + "echo CONTROL_HAND_SIDE; rosparam get /control_hand_side; "
+        "echo NODES; rosnode list; echo SERVICES; "
         "rosservice list | grep -E '/ik/|plan_arm|traj|claw|mobile_manipulator|cmd_vel' || true; "
         "echo TOPICS; rostopic list | grep -E 'claw|cmd_vel|joint|base|traj|mobile|arm' || true; "
         "echo IK_LOG; tail -30 /tmp/kuavo_ik_node.log; "

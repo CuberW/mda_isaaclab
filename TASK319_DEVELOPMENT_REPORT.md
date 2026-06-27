@@ -9,8 +9,8 @@
 当前默认入口：
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
 ```
 
 主线组成：
@@ -288,7 +288,7 @@ Task319-Hover-Descent-Grasp-Kuavo-Direct-v0
 当前 SAC 训练命令：
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task319_local_grasp_rl/train.py --algorithm SAC --headless --num_envs 256
+python task319_local_grasp_rl/train.py --algorithm SAC --headless --num_envs 256
 ```
 
 W&B：
@@ -296,7 +296,7 @@ W&B：
 ```bash
 cp task319_local_grasp_rl/wandb.example.sh task319_local_grasp_rl/wandb.sh
 source task319_local_grasp_rl/wandb.sh
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task319_local_grasp_rl/train.py --algorithm SAC --headless --num_envs 256 --wandb
+python task319_local_grasp_rl/train.py --algorithm SAC --headless --num_envs 256 --wandb
 ```
 
 接入计划：

@@ -29,7 +29,7 @@ from isaaclab.markers.config import CUBOID_MARKER_CFG, FRAME_MARKER_CFG
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
-from isaaclab.utils.math import matrix_from_quat
+from isaaclab.utils.math import matrix_from_quat, quat_from_matrix, quat_inv, skew_symmetric_matrix, subtract_frame_transforms
 
 from task_319_garbage_sort.curobo_right_arm import RIGHT_ARM_CARRY_CONFIG, RIGHT_ARM_JOINT_NAMES
 from task_319_garbage_sort.gripper_robot_urdf import ensure_kuavo_with_gripper_urdf
@@ -44,7 +44,7 @@ ROBOT_ROOT_Z_ON_WHEELS = 0.0
 TABLE_SURFACE_Z = 0.54
 TABLE_CENTER_Z = 0.51
 TABLE_THICKNESS = 0.06
-OBJECT_SIZE = (0.080, 0.050, 0.040)
+OBJECT_SIZE = (0.050, 0.050, 0.050)
 OBJECT_HALF_Z = OBJECT_SIZE[2] * 0.5
 OBJECT_SPAWN_XY = (0.36, -0.22)
 # Right-arm pose whose TCP starts near the reachable grasp workspace at z=0.70 m.
@@ -63,7 +63,7 @@ RIGHT_ARM_OBJECT_HOVER_CONFIG = (
 RIGHT_EE_BODY_CANDIDATES = ("gripper_base", "zarm_r7_end_effector")
 GRIPPER_LOCAL_TCP_OFFSET = (0.115, 0.0, 0.0)
 GRIPPER_OPEN_M = 0.055
-GRIPPER_CLOSED_M = 0.006
+GRIPPER_CLOSED_M = 0.0
 
 
 def _rigid_props(*, kinematic: bool = False) -> sim_utils.RigidBodyPropertiesCfg:
@@ -188,7 +188,7 @@ def _kuavo_robot_cfg() -> ArticulationCfg:
             "gripper": ImplicitActuatorCfg(
                 joint_names_expr=[".*finger_joint"],
                 effort_limit_sim=70.0,
-                velocity_limit_sim=0.22,
+                velocity_limit_sim=0.35,
                 stiffness=1200.0,
                 damping=90.0,
             ),
@@ -223,8 +223,8 @@ class Task319LocalSuctionGraspEnvCfg(DirectRLEnvCfg):
         physics_material=sim_utils.RigidBodyMaterialCfg(
             friction_combine_mode="max",
             restitution_combine_mode="min",
-            static_friction=1.0,
-            dynamic_friction=0.8,
+            static_friction=4.0,
+            dynamic_friction=3.0,
             restitution=0.0,
         ),
     )
@@ -267,7 +267,7 @@ class Task319LocalSuctionGraspEnvCfg(DirectRLEnvCfg):
             rigid_props=_rigid_props(),
             mass_props=sim_utils.MassPropertiesCfg(mass=0.035),
             collision_props=_collision_props(0.002),
-            physics_material=_material(1.35, 1.05),
+            physics_material=_material(4.0, 3.0),
             visual_material=_surface((0.12, 0.32, 0.72)),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(*OBJECT_SPAWN_XY, TABLE_SURFACE_Z + OBJECT_HALF_Z)),
@@ -276,8 +276,12 @@ class Task319LocalSuctionGraspEnvCfg(DirectRLEnvCfg):
     # Local controller parameters. The main 3.19 stack should already be at a
     # hover pose; this policy only handles the final TCP descent, close, lift.
     max_delta_pos_m = 0.012
+    max_delta_rot_rad = 0.080
     max_joint_step_rad = 0.032
     dls_damping = 0.018
+    ik_orientation_axis_weight = 0.10
+    enforce_topdown_grasp_orientation = True
+    align_topdown_jaw_to_object_short_axis = False
     grasp_depth_m = 0.020
     lift_success_height_m = 0.025
     workspace_radius_m = 0.12
@@ -303,7 +307,9 @@ class Task319LocalSuctionGraspEnvCfg(DirectRLEnvCfg):
     stage_descend_z_tolerance_m = 0.040
     stage_lift_height_m = 0.018
 
-    grasp_latch_enabled = True
+    # Debug-only latch. Strict training/evaluation must keep this disabled so
+    # success can only come from contact physics and gripper closure.
+    grasp_latch_enabled = False
     grasp_latch_xy_tolerance_m = 0.045
     grasp_latch_z_tolerance_m = 0.040
     grasp_latch_min_close_cmd = 0.75
@@ -311,7 +317,9 @@ class Task319LocalSuctionGraspEnvCfg(DirectRLEnvCfg):
     grasp_latch_max_offset_m = 0.070
 
     success_close_cmd_threshold = 0.75
-    success_tcp_object_dist_m = 0.11
+    strict_physical_success = True
+    success_tcp_object_dist_m = 0.065
+    success_min_actual_finger_width_m = 0.005
     object_push_penalty_start_m = 0.03
 
     reward_xy_align_scale = 1.2
@@ -386,9 +394,9 @@ class Task319LocalSuctionGraspEnv(DirectRLEnv):
 
         self._ee_body_id = self._resolve_ee_body_id()
         self._ee_jacobi_idx = self._ee_body_id - 1 if self._robot.is_fixed_base else self._ee_body_id
+        self._jacobi_joint_ids = self._right_joint_ids if self._robot.is_fixed_base else [joint_id + 6 for joint_id in self._right_joint_ids]
         self._joint_lower = self._robot.data.soft_joint_pos_limits[0, :, 0].clone()
         self._joint_upper = self._robot.data.soft_joint_pos_limits[0, :, 1].clone()
-
         self._episode_sums = {
             "xy_align": torch.zeros(self.num_envs, device=self.device),
             "z_align": torch.zeros(self.num_envs, device=self.device),
@@ -440,6 +448,39 @@ class Task319LocalSuctionGraspEnv(DirectRLEnv):
         offset = self._tcp_offset_local.repeat(self.num_envs, 1, 1)
         return self._gripper_base_pos_w() + torch.bmm(self._gripper_base_rot_w(), offset).squeeze(-1)
 
+    def _tcp_pose_b(self) -> tuple[torch.Tensor, torch.Tensor]:
+        root_pose_w = self._robot.data.root_pose_w
+        return subtract_frame_transforms(
+            root_pose_w[:, 0:3],
+            root_pose_w[:, 3:7],
+            self._tcp_pos_w(),
+            self._robot.data.body_quat_w[:, self._ee_body_id],
+        )
+
+    def _desired_tcp_pose_b(self) -> tuple[torch.Tensor, torch.Tensor]:
+        if bool(self.cfg.enforce_topdown_grasp_orientation):
+            desired_tcp_quat_w = quat_from_matrix(self._desired_grasp_rot_w())
+        else:
+            desired_tcp_quat_w = self._robot.data.body_quat_w[:, self._ee_body_id]
+        root_pose_w = self._robot.data.root_pose_w
+        return subtract_frame_transforms(
+            root_pose_w[:, 0:3],
+            root_pose_w[:, 3:7],
+            self._desired_tcp_pos_w,
+            desired_tcp_quat_w,
+        )
+
+    def _tcp_jacobian_b(self) -> torch.Tensor:
+        jacobian = self._robot.root_physx_view.get_jacobians()[:, self._ee_jacobi_idx, 0:6, :][:, :, self._jacobi_joint_ids].clone()
+        root_quat_w = self._robot.data.root_pose_w[:, 3:7]
+        root_rot_matrix = matrix_from_quat(quat_inv(root_quat_w))
+        jacobian[:, 0:3, :] = torch.bmm(root_rot_matrix, jacobian[:, 0:3, :])
+        jacobian[:, 3:6, :] = torch.bmm(root_rot_matrix, jacobian[:, 3:6, :])
+
+        offset = self._tcp_offset_local.reshape(1, 3).repeat(self.num_envs, 1)
+        jacobian[:, 0:3, :] += torch.bmm(-skew_symmetric_matrix(offset), jacobian[:, 3:6, :])
+        return jacobian
+
     def _object_top_w(self) -> torch.Tensor:
         return self._object.data.root_pos_w + torch.tensor((0.0, 0.0, OBJECT_HALF_Z), device=self.device)
 
@@ -450,6 +491,57 @@ class Task319LocalSuctionGraspEnv(DirectRLEnv):
 
     def _estimated_grasp_target_w(self) -> torch.Tensor:
         return self._object_grasp_target_w() + self._target_estimate_offset_w
+
+    def _desired_grasp_rot_w(self) -> torch.Tensor:
+        """Official-style top-down grasp frame.
+
+        Gripper/TCP local x points downward into the object. By default, local
+        y keeps the current reachable horizontal jaw yaw, matching the official
+        Lift-Cube style of using a stable fixed top-down grasp orientation
+        instead of re-solving a new yaw from the object every step.
+        """
+        x_axis = torch.zeros((self.num_envs, 3), device=self.device)
+        x_axis[:, 2] = -1.0
+
+        if bool(self.cfg.align_topdown_jaw_to_object_short_axis):
+            object_rot = matrix_from_quat(self._object.data.root_quat_w)
+            short_local_axis = torch.tensor((0.0, 1.0, 0.0), device=self.device)
+            if float(OBJECT_SIZE[0]) <= float(OBJECT_SIZE[1]):
+                short_local_axis = torch.tensor((1.0, 0.0, 0.0), device=self.device)
+            y_axis = torch.matmul(object_rot, short_local_axis.reshape(1, 3, 1).repeat(self.num_envs, 1, 1)).squeeze(-1)
+        else:
+            y_axis = self._gripper_base_rot_w()[:, :, 1].clone()
+        y_axis[:, 2] = 0.0
+        fallback_y = torch.zeros_like(y_axis)
+        fallback_y[:, 1] = 1.0
+        y_norm = torch.linalg.norm(y_axis, dim=1, keepdim=True)
+        y_axis = torch.where(y_norm > 1.0e-6, y_axis, fallback_y)
+        y_axis = y_axis / torch.linalg.norm(y_axis, dim=1, keepdim=True).clamp_min(1.0e-6)
+
+        z_axis = torch.cross(x_axis, y_axis, dim=1)
+        z_axis = z_axis / torch.linalg.norm(z_axis, dim=1, keepdim=True).clamp_min(1.0e-6)
+        y_axis = torch.cross(z_axis, x_axis, dim=1)
+        y_axis = y_axis / torch.linalg.norm(y_axis, dim=1, keepdim=True).clamp_min(1.0e-6)
+        return torch.stack((x_axis, y_axis, z_axis), dim=2)
+
+    def _orientation_error_w(self, current_rot: torch.Tensor, desired_rot: torch.Tensor) -> torch.Tensor:
+        err = (
+            torch.cross(current_rot[:, :, 0], desired_rot[:, :, 0], dim=1)
+            + torch.cross(current_rot[:, :, 1], desired_rot[:, :, 1], dim=1)
+            + torch.cross(current_rot[:, :, 2], desired_rot[:, :, 2], dim=1)
+        ) * 0.5
+        err_norm = torch.linalg.norm(err, dim=1, keepdim=True).clamp_min(1.0e-6)
+        return err * torch.clamp(float(self.cfg.max_delta_rot_rad) / err_norm, max=1.0)
+
+    def _topdown_approach_error_b(self) -> torch.Tensor:
+        current_x_w = self._gripper_base_rot_w()[:, :, 0]
+        desired_x_w = torch.zeros_like(current_x_w)
+        desired_x_w[:, 2] = -1.0
+        err_w = torch.cross(current_x_w, desired_x_w, dim=1)
+        err_norm = torch.linalg.norm(err_w, dim=1, keepdim=True).clamp_min(1.0e-6)
+        err_w = err_w * torch.clamp(float(self.cfg.max_delta_rot_rad) / err_norm, max=1.0)
+        root_rot_matrix = matrix_from_quat(quat_inv(self._robot.data.root_pose_w[:, 3:7]))
+        return torch.bmm(root_rot_matrix, err_w.unsqueeze(-1)).squeeze(-1)
 
     def _object_pos_with_latch_w(self, tcp_pos: torch.Tensor) -> torch.Tensor:
         object_pos = self._object.data.root_pos_w
@@ -503,6 +595,13 @@ class Task319LocalSuctionGraspEnv(DirectRLEnv):
             finger_open = torch.mean((finger_pos - GRIPPER_CLOSED_M) / max(GRIPPER_OPEN_M - GRIPPER_CLOSED_M, 1.0e-6), dim=1)
             return torch.clamp(finger_open, 0.0, 1.0)
         return 1.0 - self._gripper_close_cmd
+
+    def _finger_width_m(self) -> torch.Tensor:
+        if self._finger_joint_ids:
+            finger_pos = self._robot.data.joint_pos[:, self._finger_joint_ids]
+            return torch.sum(finger_pos, dim=1)
+        per_finger = GRIPPER_OPEN_M - self._gripper_close_cmd * (GRIPPER_OPEN_M - GRIPPER_CLOSED_M)
+        return 2.0 * per_finger
 
     def _teacher_mix_probability(self) -> float:
         if not bool(self.cfg.teacher_enabled):
@@ -621,7 +720,13 @@ class Task319LocalSuctionGraspEnv(DirectRLEnv):
         closed = self._gripper_close_cmd > float(self.cfg.success_close_cmd_threshold)
         lifted = object_lift > float(self.cfg.lift_success_height_m)
         retained = tcp_object_dist < float(self.cfg.success_tcp_object_dist_m)
-        attached = self._grasp_latched if bool(self.cfg.grasp_latch_enabled) else retained
+        if bool(self.cfg.grasp_latch_enabled):
+            attached = self._grasp_latched
+        elif bool(self.cfg.strict_physical_success):
+            finger_blocked = self._finger_width_m() > float(self.cfg.success_min_actual_finger_width_m)
+            attached = retained & finger_blocked
+        else:
+            attached = retained
         return closed & lifted & retained & attached, retained
 
     def _pre_physics_step(self, actions: torch.Tensor):
@@ -658,24 +763,32 @@ class Task319LocalSuctionGraspEnv(DirectRLEnv):
         self._gripper_close_cmd = torch.clamp((self._actions[:, 3] + 1.0) * 0.5, 0.0, 1.0)
 
     def _apply_action(self):
-        tcp_pos = self._tcp_pos_w()
-        base_pos = self._gripper_base_pos_w()
-        base_rot = self._gripper_base_rot_w()
-        offset = self._tcp_offset_local.repeat(self.num_envs, 1, 1)
-        desired_base_pos = self._desired_tcp_pos_w - torch.bmm(base_rot, offset).squeeze(-1)
-        position_error = desired_base_pos - base_pos
-        error_norm = torch.linalg.norm(position_error, dim=1, keepdim=True).clamp_min(1.0e-6)
-        position_error = position_error * torch.clamp(self.cfg.max_delta_pos_m / error_norm, max=1.0)
-
-        jacobian = self._robot.root_physx_view.get_jacobians()[:, self._ee_jacobi_idx, 0:3, :][:, :, self._right_joint_ids]
-        jac_t = torch.transpose(jacobian, 1, 2)
-        eye = torch.eye(3, device=self.device).unsqueeze(0)
-        lhs = torch.bmm(jacobian, jac_t) + (self.cfg.dls_damping**2) * eye
-        rhs = position_error.unsqueeze(-1)
-        delta_q = torch.bmm(jac_t, torch.linalg.solve(lhs, rhs)).squeeze(-1)
-        delta_q = torch.clamp(delta_q, -self.cfg.max_joint_step_rad, self.cfg.max_joint_step_rad)
+        tcp_pos_b, tcp_quat_b = self._tcp_pose_b()
+        desired_tcp_pos_b, desired_tcp_quat_b = self._desired_tcp_pose_b()
+        del tcp_quat_b, desired_tcp_quat_b
+        position_error = desired_tcp_pos_b - tcp_pos_b
+        if bool(self.cfg.enforce_topdown_grasp_orientation):
+            orientation_error = self._topdown_approach_error_b()
+        else:
+            orientation_error = torch.zeros_like(position_error)
+        pose_error = torch.cat((position_error, orientation_error), dim=1)
+        jacobian = self._tcp_jacobian_b()
+        orientation_weight = float(self.cfg.ik_orientation_axis_weight)
+        pose_error[:, 3:6] *= orientation_weight
+        jacobian[:, 3:6, :] *= orientation_weight
 
         joint_pos = self._robot.data.joint_pos
+        jacobian_t = torch.transpose(jacobian, dim0=1, dim1=2)
+        lambda_matrix = (float(self.cfg.dls_damping) ** 2) * torch.eye(n=6, device=self.device)
+        delta_q_raw = (
+            jacobian_t
+            @ torch.inverse(jacobian @ jacobian_t + lambda_matrix)
+            @ pose_error.unsqueeze(-1)
+        ).squeeze(-1)
+        desired_joints_raw = joint_pos[:, self._right_joint_ids] + delta_q_raw
+        delta_q = desired_joints_raw - joint_pos[:, self._right_joint_ids]
+        delta_q = torch.clamp(delta_q, -self.cfg.max_joint_step_rad, self.cfg.max_joint_step_rad)
+
         desired_joints = joint_pos[:, self._right_joint_ids] + delta_q
         desired_joints = torch.minimum(
             torch.maximum(desired_joints, self._joint_lower[self._right_joint_ids]),
@@ -862,6 +975,7 @@ class Task319LocalSuctionGraspEnv(DirectRLEnv):
             self.extras["log"]["Metrics/min_tcp_target_distance_m"] = torch.mean(min_dist)
             self.extras["log"]["Metrics/max_object_lift_m"] = torch.mean(self._max_object_lift[env_ids])
             self.extras["log"]["Metrics/max_close_cmd"] = torch.mean(self._max_close_cmd[env_ids])
+            self.extras["log"]["Metrics/finger_width_m"] = torch.mean(self._finger_width_m()[env_ids])
             self.extras["log"]["Metrics/grasp_retained_rate"] = torch.mean(self._max_grasp_retained[env_ids])
             self.extras["log"]["Metrics/stage_reach_rate"] = torch.mean(self._max_stage_reach[env_ids])
             self.extras["log"]["Metrics/stage_descend_rate"] = torch.mean(self._max_stage_descend[env_ids])

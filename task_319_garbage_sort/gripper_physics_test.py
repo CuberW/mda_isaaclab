@@ -7,8 +7,7 @@ This script validates the gripper in isolation from navigation and perception:
 - A small grasp block is placed between the finger pads and the gripper closes.
 
 Usage:
-    /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
-        task_319_garbage_sort/gripper_physics_test.py --headless --smoke_steps 240
+    python task_319_garbage_sort/gripper_physics_test.py --headless --smoke_steps 240
 """
 
 from __future__ import annotations

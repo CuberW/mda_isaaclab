@@ -57,6 +57,13 @@ parser.add_argument("--teacher_warmup_steps", type=int, default=10000, help="Env
 parser.add_argument("--teacher_decay_steps", type=int, default=80000, help="Env steps used to decay teacher action probability.")
 parser.add_argument("--teacher_mix_start", type=float, default=0.80, help="Teacher probability after warmup.")
 parser.add_argument("--teacher_mix_end", type=float, default=0.0, help="Final teacher probability after decay.")
+parser.add_argument("--debug_grasp_latch", action="store_true", help="Enable hidden grasp latch for debugging only. Do not use for strict physical training.")
+parser.add_argument(
+    "--strict_physical_success",
+    action=argparse.BooleanOptionalAction,
+    default=True,
+    help="Require physical lift plus gripper-width contact proxy for success metrics.",
+)
 parser.add_argument("--wandb", action="store_true", help="Upload training metrics to Weights & Biases.")
 parser.add_argument("--wandb_project", type=str, default=None, help="W&B project. Defaults to WANDB_PROJECT or YAML.")
 parser.add_argument("--wandb_entity", type=str, default=None, help="W&B entity/team. Defaults to WANDB_ENTITY or YAML.")
@@ -160,6 +167,8 @@ def _apply_teacher_cfg(env_cfg: DirectRLEnvCfg) -> None:
     if args_cli.teacher_only:
         env_cfg.teacher_mix_start = 1.0
         env_cfg.teacher_mix_end = 1.0
+    env_cfg.grasp_latch_enabled = bool(args_cli.debug_grasp_latch)
+    env_cfg.strict_physical_success = bool(args_cli.strict_physical_success)
 
 
 @hydra_task_config(args_cli.task, agent_cfg_entry_point)

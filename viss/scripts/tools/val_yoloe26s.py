@@ -21,8 +21,15 @@ except Exception as e:
 from ultralytics import YOLO
 
 def main():
-    model_path = '/home/robot/trashbot_ws/runs/yoloe_trash_object_seg/weights/best.pt'
-    data_yaml = '/home/robot/trashbot_ws/datasets/trash_object_yoloe_seg/data.yaml'
+    workspace = os.environ.get("TRASHBOT_WS", os.getcwd())
+    model_path = os.environ.get(
+        "YOLOE_BEST_WEIGHTS",
+        os.path.join(workspace, "viss/runs/yoloe_trash_object_seg/weights/best.pt"),
+    )
+    data_yaml = os.environ.get(
+        "TRASH_YOLO_DATA",
+        os.path.join(workspace, "datasets/trash_object_yoloe_seg/data.yaml"),
+    )
     
     if not os.path.exists(model_path):
         print(f"Error: Model weights not found at {model_path}. Please wait for training to finish.")
@@ -47,23 +54,27 @@ def main():
     print("RUNNING INFERENCE PREDICTION ON SAMPLE IMAGES")
     print("="*40)
     
-    # Look for images inside /home/robot/trashbot_ws/data/images recursively
-    image_pattern = "/home/robot/trashbot_ws/data/images/**/*.jpg"
+    image_root = os.environ.get("TRASH_SAMPLE_IMAGE_DIR", os.path.join(workspace, "data/images"))
+    # Look for images inside the configured sample image directory recursively.
+    image_pattern = os.path.join(image_root, "**/*.jpg")
     images = glob.glob(image_pattern, recursive=True)
     if not images:
         # Fallback to check if png images exist
-        image_pattern = "/home/robot/trashbot_ws/data/images/**/*.png"
+        image_pattern = os.path.join(image_root, "**/*.png")
         images = glob.glob(image_pattern, recursive=True)
         
     if not images:
-        print("Warning: No sample images found under /home/robot/trashbot_ws/data/images/ recursively.")
+        print(f"Warning: No sample images found under {image_root} recursively.")
         print("Skipping visualization prediction step.")
         return
         
     print(f"Found {len(images)} sample images. Selecting 5 at random for prediction overlay...")
     sampled_imgs = random.sample(images, min(5, len(images)))
     
-    output_dir = '/home/robot/trashbot_ws/data/logs/val_predictions'
+    output_dir = os.environ.get(
+        "TRASH_VAL_OUTPUT_DIR",
+        os.path.join(workspace, "data/logs/val_predictions"),
+    )
     os.makedirs(output_dir, exist_ok=True)
     
     print(f"Saving overlay images to: {output_dir}")

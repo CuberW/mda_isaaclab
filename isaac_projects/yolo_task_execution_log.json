@@ -1,7 +1,7 @@
 {
-  "source_image": "/home/robot/trashbot_ws/data/images/20260617_223939/frame_000001.png",
-  "source_model": "/home/robot/trashbot_ws/models/best_seg.pt",
-  "source_result": "/home/robot/trashbot_ws/data/logs/yolo_seg_offline_result.json",
+  "source_image": "data/images/20260617_223939/frame_000001.png",
+  "source_model": "models/best_seg.pt",
+  "source_result": "data/logs/yolo_seg_offline_result.json",
   "note": "Formal display uses garbage category only. Raw YOLO class is kept for debug tracing.",
   "tasks": [
     {

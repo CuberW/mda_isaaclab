@@ -353,7 +353,7 @@ mixed Python/ROS environment conflicts.
 ROS 2 side command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 /usr/bin/python3 task_319_garbage_sort/scripts/ros2_cmd_vel_socket_server.py \
   --host 127.0.0.1 \
   --port 31971 \
@@ -365,7 +365,7 @@ Kuavo ROS 1 side command on a machine/container where `rospy` and `kuavo_msgs`
 are available:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 source kuavo-ros-opensource/devel/setup.bash
 python3 task_319_garbage_sort/scripts/kuavo_ros1_cmd_vel_socket_client.py \
   --server-host 127.0.0.1 \
@@ -717,7 +717,7 @@ Isaac execution limits:
 ROS-only Nav2 smoke test:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 source task_319_garbage_sort/scripts/setup_nav2_user_install.bash
 /usr/bin/python3 task_319_garbage_sort/scripts/ros2_nav2_stack_launcher.py --output-dir task_319_garbage_sort/output/nav2_smoke_stack
 ```
@@ -725,7 +725,7 @@ source task_319_garbage_sort/scripts/setup_nav2_user_install.bash
 Second terminal:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 source task_319_garbage_sort/scripts/setup_nav2_user_install.bash
 /usr/bin/python3 task_319_garbage_sort/scripts/ros2_nav2_smoke_test.py --goal-x 0.60 --goal-y 0.0 --goal-yaw 0.0 --timeout-s 70 --server-timeout-s 25 --goal-attempts 5 --retry-delay-s 2
 ```
@@ -733,43 +733,43 @@ source task_319_garbage_sort/scripts/setup_nav2_user_install.bash
 Isaac motion-only single-category test:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --motion_only_sort_demo --nav_backend nav2 --motion_test_category 其他垃圾 --record_debug --record_video --warmup_steps 80
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --motion_only_sort_demo --nav_backend nav2 --motion_test_category 其他垃圾 --record_debug --record_video --warmup_steps 80
 ```
 
 Headless verified command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 900s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --motion_only_sort_demo --nav_backend nav2 --motion_test_category 其他垃圾 --record_debug --record_video --warmup_steps 80 --nav2_stack_startup_s 2
+cd mda_isaaclab
+timeout 900s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --motion_only_sort_demo --nav_backend nav2 --motion_test_category 其他垃圾 --record_debug --record_video --warmup_steps 80 --nav2_stack_startup_s 2
 ```
 
 Visible waypoint-route demo:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --waypoint_nav_demo --waypoint_route home,table_left,bin_center,table_right,home --nav_backend nav2 --record_debug --record_video --warmup_steps 80 --nav2_stack_startup_s 2 --post_action_hold_steps 240
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --waypoint_nav_demo --waypoint_route home,table_left,bin_center,table_right,home --nav_backend nav2 --record_debug --record_video --warmup_steps 80 --nav2_stack_startup_s 2 --post_action_hold_steps 240
 ```
 
 Headless waypoint-route verification:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 900s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --waypoint_nav_demo --waypoint_route home,table_left,bin_center,table_right,home --nav_backend nav2 --record_debug --record_video --warmup_steps 80 --nav2_stack_startup_s 2
+cd mda_isaaclab
+timeout 900s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --waypoint_nav_demo --waypoint_route home,table_left,bin_center,table_right,home --nav_backend nav2 --record_debug --record_video --warmup_steps 80 --nav2_stack_startup_s 2
 ```
 
 Wheel open-loop sanity check:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 600s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --wheel_open_loop_demo --record_debug --record_video --warmup_steps 40 --wheel_open_loop_steps 240 --wheel_open_loop_linear_speed 0.25 --wheel_open_loop_angular_speed 0.0
+cd mda_isaaclab
+timeout 600s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --wheel_open_loop_demo --record_debug --record_video --warmup_steps 40 --wheel_open_loop_steps 240 --wheel_open_loop_linear_speed 0.25 --wheel_open_loop_angular_speed 0.0
 ```
 
 Official Isaac wheeled-controller diagnostic:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 260s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/official_holonomic_wheel_test.py --headless --record_debug --controller_backend differential --warmup_steps 5 --drive_steps 40 --cmd_vx 0.18 --cmd_vy 0.0 --cmd_wz 0.0
+cd mda_isaaclab
+timeout 260s python task_319_garbage_sort/official_holonomic_wheel_test.py --headless --record_debug --controller_backend differential --warmup_steps 5 --drive_steps 40 --cmd_vx 0.18 --cmd_vy 0.0 --cmd_wz 0.0
 ```
 
 ## Latest Verified Result

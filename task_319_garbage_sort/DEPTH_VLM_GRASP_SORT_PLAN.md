@@ -234,8 +234,8 @@ grasp_point = depth_component.center_3d
 ### 5.1 静态检查
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile \
+cd mda_isaaclab
+python -m py_compile \
   task_319_garbage_sort/visual_grasp_record_demo.py \
   task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
@@ -245,8 +245,8 @@ cd /home/zhxm/workspace/mda_isaaclab
 运行 1 个 cycle，不执行抓取：
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 240s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
+cd mda_isaaclab
+timeout 240s python \
   task_319_garbage_sort/task319_grasp_sort_sm.py \
   --headless \
   --num_cycles 1 \
@@ -268,8 +268,8 @@ timeout 240s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
 ### 5.3 抓取验证
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 420s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
+cd mda_isaaclab
+timeout 420s python \
   task_319_garbage_sort/task319_grasp_sort_sm.py \
   --headless \
   --num_cycles 1 \
@@ -301,8 +301,8 @@ timeout 420s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
 ### 5.4 分类投桶验证
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 700s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
+cd mda_isaaclab
+timeout 700s python \
   task_319_garbage_sort/task319_grasp_sort_sm.py \
   --headless \
   --num_cycles 1 \

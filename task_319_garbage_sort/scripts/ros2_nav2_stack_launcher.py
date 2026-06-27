@@ -35,6 +35,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--planner-tolerance", type=float, default=0.12)
     parser.add_argument("--xy-goal-tolerance", type=float, default=0.06)
     parser.add_argument("--yaw-goal-tolerance", type=float, default=0.12)
+    parser.add_argument(
+        "--lifecycle-start-delay-s",
+        type=float,
+        default=4.0,
+        help="Delay lifecycle manager startup so the Isaac bridge has time to publish fresh tf/odom/scan data.",
+    )
     return parser.parse_args()
 
 
@@ -291,6 +297,115 @@ def terminate_processes(processes: list[tuple[str, subprocess.Popen[str]]]) -> N
             process.kill()
 
 
+def run_lifecycle_command(command: list[str], log_file, timeout_s: float = 12.0) -> subprocess.CompletedProcess[str] | None:
+    log_file.write(f"[LIFECYCLE] run: {' '.join(command)}\n")
+    log_file.flush()
+    try:
+        completed = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=timeout_s)
+    except subprocess.TimeoutExpired as exc:
+        log_file.write(f"[LIFECYCLE] timeout: {exc!r}\n")
+        log_file.flush()
+        return None
+    log_file.write(completed.stdout)
+    log_file.write(f"[LIFECYCLE] returncode={completed.returncode}\n")
+    log_file.flush()
+    return completed
+
+
+def parse_lifecycle_state(output: str) -> str | None:
+    text = str(output or "").strip().lower()
+    for state in ("unconfigured", "inactive", "active", "finalized"):
+        if text.startswith(state):
+            return state
+    return None
+
+
+def get_lifecycle_state(node_name: str, log_file, timeout_s: float = 6.0) -> str | None:
+    completed = run_lifecycle_command(["ros2", "lifecycle", "get", node_name], log_file, timeout_s=timeout_s)
+    if completed is None or completed.returncode != 0:
+        return None
+    return parse_lifecycle_state(completed.stdout)
+
+
+def wait_for_lifecycle_state(
+    node_name: str,
+    desired_states: set[str],
+    log_file,
+    timeout_s: float = 20.0,
+    poll_s: float = 0.5,
+) -> str | None:
+    deadline = time.time() + max(0.1, timeout_s)
+    while time.time() < deadline:
+        state = get_lifecycle_state(node_name, log_file)
+        if state in desired_states:
+            return state
+        time.sleep(max(0.05, poll_s))
+    return get_lifecycle_state(node_name, log_file)
+
+
+def set_lifecycle_transition(
+    node_name: str,
+    transition: str,
+    desired_state: str,
+    log_file,
+    attempts: int = 5,
+) -> bool:
+    command = ["ros2", "lifecycle", "set", node_name, transition]
+    for attempt in range(1, max(1, attempts) + 1):
+        log_file.write(f"[LIFECYCLE] {node_name} {transition} attempt {attempt}\n")
+        log_file.flush()
+        completed = run_lifecycle_command(command, log_file)
+        state = get_lifecycle_state(node_name, log_file)
+        if state == desired_state:
+            return True
+        if completed is not None and completed.returncode == 0 and "Transitioning successful" in str(completed.stdout):
+            state = wait_for_lifecycle_state(node_name, {desired_state}, log_file, timeout_s=8.0)
+            if state == desired_state:
+                return True
+        time.sleep(0.8)
+    return False
+
+
+def bring_lifecycle_node_active(node_name: str, log_file) -> bool:
+    state = wait_for_lifecycle_state(node_name, {"unconfigured", "inactive", "active"}, log_file, timeout_s=30.0)
+    log_file.write(f"[LIFECYCLE] {node_name} initial_state={state}\n")
+    log_file.flush()
+    if state == "active":
+        return True
+    if state == "unconfigured":
+        if not set_lifecycle_transition(node_name, "configure", "inactive", log_file):
+            log_file.write(f"[LIFECYCLE] {node_name} configure did not reach inactive\n")
+            log_file.flush()
+            return False
+        state = "inactive"
+    if state == "inactive":
+        if not set_lifecycle_transition(node_name, "activate", "active", log_file):
+            log_file.write(f"[LIFECYCLE] {node_name} activate did not reach active\n")
+            log_file.flush()
+            return False
+        return True
+    log_file.write(f"[LIFECYCLE] {node_name} unsupported state={state}\n")
+    log_file.flush()
+    return False
+
+
+def manual_lifecycle_bringup(log_dir: Path, start_delay_s: float) -> bool:
+    nodes = ["/map_server", "/planner_server", "/controller_server", "/bt_navigator"]
+    log_path = log_dir / "lifecycle_manual_bringup.log"
+    with log_path.open("w", encoding="utf-8") as log_file:
+        delay = max(0.0, float(start_delay_s))
+        log_file.write(f"[LIFECYCLE] manual bringup delay_s={delay:.3f}\n")
+        log_file.flush()
+        time.sleep(delay)
+        for node_name in nodes:
+            if not bring_lifecycle_node_active(node_name, log_file):
+                log_file.write(f"[LIFECYCLE] failed to activate {node_name}\n")
+                log_file.flush()
+                return False
+            time.sleep(0.35)
+    return True
+
+
 def main() -> int:
     args = parse_args()
     out_dir = Path(args.output_dir).resolve()
@@ -306,20 +421,6 @@ def main() -> int:
         ("planner_server", ["ros2", "run", "nav2_planner", "planner_server", "--ros-args", "--params-file", str(params_path)]),
         ("controller_server", ["ros2", "run", "nav2_controller", "controller_server", "--ros-args", "--params-file", str(params_path)]),
         ("bt_navigator", ["ros2", "run", "nav2_bt_navigator", "bt_navigator", "--ros-args", "--params-file", str(params_path)]),
-        (
-            "lifecycle_manager_navigation",
-            [
-                "ros2",
-                "run",
-                "nav2_lifecycle_manager",
-                "lifecycle_manager",
-                "--ros-args",
-                "-r",
-                "__node:=lifecycle_manager_navigation",
-                "--params-file",
-                str(params_path),
-            ],
-        ),
     ]
 
     stop = False
@@ -346,6 +447,10 @@ def main() -> int:
             encoding="utf-8",
         )
         print(f"[NAV2_STACK] runtime files: {out_dir}", flush=True)
+        if not manual_lifecycle_bringup(log_dir, float(args.lifecycle_start_delay_s)):
+            print("[NAV2_STACK] manual lifecycle bringup failed; terminating", flush=True)
+            return 2
+        print("[NAV2_STACK] manual lifecycle bringup complete", flush=True)
         while not stop:
             failed = [(name, process.returncode) for name, process in processes if process.poll() is not None]
             if failed:

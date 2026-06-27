@@ -22,8 +22,8 @@ This baseline intentionally prioritizes a stable physical-grasp demonstration ov
 ## Main Command
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
 ```
 
 ## Debug-Cube Validation
@@ -31,8 +31,8 @@ cd /home/zhxm/workspace/mda_isaaclab
 Command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 360s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_pos 0.70,-0.16,0.5625 --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 8 --warmup_steps 40 --cycle_interval_steps 1 --trajectory_steps 180 --safe_pregrasp_start --safe_pregrasp_steps 100 --grasp_steps 120 --lift_steps 140 --hold_steps 20 --post_action_hold_steps 0 --no-gui_realtime_playback
+cd mda_isaaclab
+timeout 360s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_pos 0.70,-0.16,0.5625 --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 8 --warmup_steps 40 --cycle_interval_steps 1 --trajectory_steps 180 --safe_pregrasp_start --safe_pregrasp_steps 100 --grasp_steps 120 --lift_steps 140 --hold_steps 20 --post_action_hold_steps 0 --no-gui_realtime_playback
 ```
 
 Result:

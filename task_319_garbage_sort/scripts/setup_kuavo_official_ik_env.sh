@@ -10,7 +10,7 @@ set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 KUAVO_WS="${KUAVO_WS:-$WORKSPACE_ROOT/kuavo-ros-opensource}"
-KUAVO_NOETIC_ROOT="${KUAVO_NOETIC_ROOT:-/home/zhxm/workspace/rl_ros1_ws/dvst2/barn/challenge/official_faithful/drl_vo/artifacts/nav_competition_image_sandbox/opt/ros/noetic}"
+KUAVO_NOETIC_ROOT="${KUAVO_NOETIC_ROOT:-/opt/ros/noetic}"
 if [[ ! -f "$KUAVO_NOETIC_ROOT/setup.bash" && -f /opt/ros/noetic/setup.bash ]]; then
   KUAVO_NOETIC_ROOT=/opt/ros/noetic
 fi
@@ -20,13 +20,19 @@ if [[ ! -f "$KUAVO_NOETIC_ROOT/setup.bash" ]]; then
   return 1 2>/dev/null || exit 1
 fi
 
-DRAKE_LIB_DIR="${DRAKE_LIB_DIR:-/home/zhxm/miniconda3/envs/my_task319_safe/lib/python3.11/site-packages/pydrake/lib}"
+PY_SITE_PACKAGES="${CONDA_SITE_PACKAGES:-$(python - <<'PY'
+import site
+paths = site.getsitepackages()
+print(paths[0] if paths else "")
+PY
+)}"
+DRAKE_LIB_DIR="${DRAKE_LIB_DIR:-${PY_SITE_PACKAGES}/pydrake/lib}"
 if [[ ! -f "$DRAKE_LIB_DIR/libdrake.so" ]]; then
   echo "[kuavo_ik_env] libdrake.so not found in DRAKE_LIB_DIR=$DRAKE_LIB_DIR" >&2
-  echo "[kuavo_ik_env] Install with: /home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m pip install drake" >&2
+  echo "[kuavo_ik_env] Install with: python -m pip install drake" >&2
   return 1 2>/dev/null || exit 1
 fi
-CONDA_SITE_PACKAGES="${CONDA_SITE_PACKAGES:-/home/zhxm/miniconda3/envs/my_task319_safe/lib/python3.11/site-packages}"
+CONDA_SITE_PACKAGES="${CONDA_SITE_PACKAGES:-$PY_SITE_PACKAGES}"
 
 KUAVO_COMPAT_LIB_DIR="${KUAVO_COMPAT_LIB_DIR:-/tmp/task319_ros1_compat_libs}"
 mkdir -p "$KUAVO_COMPAT_LIB_DIR"

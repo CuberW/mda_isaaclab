@@ -9,8 +9,7 @@ and ROS bridges.  It validates the manipulation chain only:
   DifferentialIKController.
 
 Usage:
-    /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
-        task_319_garbage_sort/arm_chain_isolated_test.py --headless --smoke_steps 360
+    python task_319_garbage_sort/arm_chain_isolated_test.py --headless --smoke_steps 360
 """
 
 from __future__ import annotations

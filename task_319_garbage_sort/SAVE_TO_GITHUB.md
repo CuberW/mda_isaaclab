@@ -12,7 +12,7 @@ git config user.email "773329413@qq.com"
 Create or connect a GitHub repository, then push:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab/task_319_garbage_sort
+cd mda_isaaclab/task_319_garbage_sort
 git remote add origin git@github.com:CuberW/task319-garbage-sort.git
 git branch -M main
 git push -u origin main

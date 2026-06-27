@@ -64,7 +64,7 @@ class Nav2GoalClient(Node):
                     last_result.update({"status": "SEND_TIMEOUT", "attempt": attempt})
                     return False, last_result
             success, result = self._send_goal_once(args, deadline, attempt)
-            if success or result.get("status") not in {"REJECTED"} or attempt >= attempts:
+            if success or result.get("status") not in {"REJECTED", "STATUS_5", "STATUS_6"} or attempt >= attempts:
                 return success, result
             last_result = result
             if deadline is None:

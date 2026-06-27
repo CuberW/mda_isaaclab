@@ -30,8 +30,12 @@ class AttachedParallelGripper:
             raise RuntimeError(f"Expected attached gripper joints, got {self.joint_names}.")
 
     def width_to_joint_positions(self, width_m: float) -> torch.Tensor:
-        width_m = self.clamp_width(width_m)
+        width_m = min(self.limits.max_width_m, float(width_m))
         per_finger = 0.5 * width_m
+        return torch.full((self.robot.num_instances, 2), per_finger, device=self.robot.device)
+
+    def width_to_joint_positions_unclamped(self, width_m: float) -> torch.Tensor:
+        per_finger = 0.5 * float(width_m)
         return torch.full((self.robot.num_instances, 2), per_finger, device=self.robot.device)
 
     def clamp_width(self, width_m: float) -> float:
@@ -39,6 +43,9 @@ class AttachedParallelGripper:
 
     def set_width(self, width_m: float) -> None:
         self.robot.set_joint_position_target(self.width_to_joint_positions(width_m), joint_ids=self.joint_ids)
+
+    def set_width_unclamped(self, width_m: float) -> None:
+        self.robot.set_joint_position_target(self.width_to_joint_positions_unclamped(width_m), joint_ids=self.joint_ids)
 
     def current_width(self) -> float:
         joint_pos = self.robot.data.joint_pos[:, self.joint_ids]
@@ -51,5 +58,8 @@ class AttachedParallelGripper:
     def open_for_grasp(self, requested_width_m: float) -> None:
         self.set_width(self.open_width_for_grasp(requested_width_m))
 
-    def close(self) -> None:
-        self.set_width(self.limits.min_width_m)
+    def close(self, width_m: float | None = None) -> None:
+        if width_m is None:
+            self.set_width(self.limits.min_width_m)
+        else:
+            self.set_width_unclamped(width_m)

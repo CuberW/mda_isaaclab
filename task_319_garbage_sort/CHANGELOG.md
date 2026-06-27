@@ -2,6 +2,38 @@
 
 All implementation changes for this task should be documented here together with the command that demonstrates the changed behavior.
 
+## 2026-06-25: Add split physical-only showcase stages
+
+Change:
+- Added `--physical_showcase_stage {grasp_fixed,carry_drop,return_home}` to
+  `visual_grasp_record_demo.py` for separated video evidence.
+- The showcase now runs in the formal main scene by default. It no longer
+  enables `--debug_cube_grasp_demo` unless the target object is explicitly
+  `debug_cube`, so the table keeps the normal 10 trash objects.
+- Added `--physical_showcase_object`, defaulting to `trash_battery_0`, so the
+  split videos use the larger hazardous battery block in the main table scene.
+- `grasp_fixed` uses the selected main-scene object in a fixed best-position
+  physical clamp/lift segment: before recording the object is placed in the
+  gripper as the initial condition, while the recorded segment keeps a physical
+  gripper width slightly smaller than the object and lifts it to the carry pose.
+- `carry_drop` starts from a pre-recording initial condition where the cube is
+  physically closed in the right gripper, then records Nav2 movement to the
+  selected bin side, right-gripper motion over the hardcoded bin opening, and
+  physical gripper release.
+- `return_home` starts after the drop and records Nav2 return to `home`.
+- The showcase metadata explicitly records that suction, gripper-proximity
+  attach, simulated pick, and object teleport during recording are disabled.
+- Added the three launch commands to `DEMO_COMMANDS.md` and summarized them in
+  the root `README.md`.
+
+Validation:
+- Static compile passed:
+  `python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py`
+- Headless smoke for `grasp_fixed` passed and saved an observer video:
+  `task_319_garbage_sort/output/head_camera_grasp_records/20260625_235359/external_grasp_demo.mp4`
+- GUI showcase commands are in `task_319_garbage_sort/DEMO_COMMANDS.md` under
+  `4A-Showcase. Split Physical-Only Video Segments`.
+
 ## 2026-06-25: Add repository README and Task319 development report
 
 Change:
@@ -51,9 +83,9 @@ Validation:
 - Static compile passed:
   `python -m py_compile task319_local_grasp_rl/local_suction_grasp_env.py task319_local_grasp_rl/train.py task319_local_grasp_rl/play.py task319_local_grasp_rl/__init__.py`
 - IsaacLab/skrl smoke training passed:
-  `/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task319_local_grasp_rl/train.py --task319_quick_test --headless`
+  `python task319_local_grasp_rl/train.py --task319_quick_test --headless`
 - Full training command:
-  `/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task319_local_grasp_rl/train.py --headless --num_envs 256 --max_iterations 1500 --wandb`
+  `python task319_local_grasp_rl/train.py --headless --num_envs 256 --max_iterations 1500 --wandb`
 
 ## 2026-06-25: Move gripper over bin before release instead of teleporting object
 
@@ -76,7 +108,7 @@ Validation:
 - Static compile passed:
   `python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py`
 - Full visual validation command:
-  `/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo`
+  `python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo`
 
 ## 2026-06-25: Add standalone IsaacLab skrl PPO local grasp training environment
 
@@ -101,11 +133,11 @@ Change:
 Validation:
 - Static compile passed for the new package.
 - Quick IsaacLab/skrl smoke training passed:
-  `/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task319_local_grasp_rl/train.py --task319_quick_test --headless`
+  `python task319_local_grasp_rl/train.py --task319_quick_test --headless`
 - Smoke run wrote checkpoints under
   `logs/skrl/task319_local_suction_grasp/2026-06-25_12-29-29_ppo_torch/checkpoints/`.
 - Checkpoint replay smoke test passed:
-  `/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task319_local_grasp_rl/play.py --headless --checkpoint logs/skrl/task319_local_suction_grasp/2026-06-25_12-29-29_ppo_torch/checkpoints/agent_30.pt --num_envs 2 --steps 5`
+  `python task319_local_grasp_rl/play.py --headless --checkpoint logs/skrl/task319_local_suction_grasp/2026-06-25_12-29-29_ppo_torch/checkpoints/agent_30.pt --num_envs 2 --steps 5`
 
 ## 2026-06-25: Add directionless max-open envelope grasp for the v28 mainline
 
@@ -187,8 +219,8 @@ Change:
 Validation command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile \
+cd mda_isaaclab
+python -m py_compile \
   task_319_garbage_sort/visual_grasp_record_demo.py \
   task_319_garbage_sort/curobo_right_arm.py \
   task_319_garbage_sort/task319_grasp_sort_sm.py
@@ -234,8 +266,8 @@ Change:
 Validation command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile \
+cd mda_isaaclab
+python -m py_compile \
   task_319_garbage_sort/visual_grasp_record_demo.py \
   task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
@@ -243,8 +275,8 @@ cd /home/zhxm/workspace/mda_isaaclab
 Current GUI mainline command, without GraspNet:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
 ```
 
 ## 2026-06-24: Force mind-sort mainline onto the stable debug-cube grasp primitive (superseded as default)
@@ -259,8 +291,8 @@ Change:
 Validation command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile \
+cd mda_isaaclab
+python -m py_compile \
   task_319_garbage_sort/visual_grasp_record_demo.py \
   task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
@@ -268,8 +300,8 @@ cd /home/zhxm/workspace/mda_isaaclab
 Current GUI mainline command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
 ```
 
 ## 2026-06-24: Tighten Nav2 final docking and smooth chassis execution
@@ -297,8 +329,8 @@ Change:
 Validation command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile \
+cd mda_isaaclab
+python -m py_compile \
   task_319_garbage_sort/visual_grasp_record_demo.py \
   task_319_garbage_sort/scripts/ros2_nav2_stack_launcher.py
 ```
@@ -306,8 +338,8 @@ cd /home/zhxm/workspace/mda_isaaclab
 Navigation observation command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --waypoint_nav_demo --waypoint_route home,table_left,bin_center,home --record_debug --record_video
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --waypoint_nav_demo --waypoint_route home,table_left,bin_center,home --record_debug --record_video
 ```
 
 Observed validation:
@@ -335,8 +367,8 @@ Change:
 Validation command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile \
+cd mda_isaaclab
+python -m py_compile \
   task_319_garbage_sort/visual_grasp_record_demo.py \
   task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
@@ -344,8 +376,8 @@ cd /home/zhxm/workspace/mda_isaaclab
 Current GUI run command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
 ```
 
 
@@ -383,8 +415,8 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile \
+cd mda_isaaclab
+python -m py_compile \
   task_319_garbage_sort/visual_grasp_record_demo.py \
   task_319_garbage_sort/task319_grasp_sort_sm.py \
   task_319_garbage_sort/curobo_right_arm.py
@@ -393,15 +425,15 @@ cd /home/zhxm/workspace/mda_isaaclab
 Truth-source isolated cube calibration command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_pos 0.70,-0.16,0.5625 --arm_motion_backend curobo_right_arm --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 6 --warmup_steps 60 --cycle_interval_steps 1 --trajectory_steps 180 --safe_pregrasp_steps 80 --grasp_steps 100 --lift_steps 120 --hold_steps 40 --max_joint_step 0.02 --post_action_hold_steps 20 --no-gui_realtime_playback
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_pos 0.70,-0.16,0.5625 --arm_motion_backend curobo_right_arm --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 6 --warmup_steps 60 --cycle_interval_steps 1 --trajectory_steps 180 --safe_pregrasp_steps 80 --grasp_steps 100 --lift_steps 120 --hold_steps 40 --max_joint_step 0.02 --post_action_hold_steps 20 --no-gui_realtime_playback
 ```
 
 RGB-D-source isolated cube calibration command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_rgbd_target --debug_cube_isolated_scene --debug_cube_pos 0.70,-0.16,0.5625 --arm_motion_backend curobo_right_arm --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 6 --warmup_steps 60 --cycle_interval_steps 1 --trajectory_steps 180 --safe_pregrasp_steps 80 --grasp_steps 100 --lift_steps 120 --hold_steps 40 --max_joint_step 0.02 --post_action_hold_steps 20 --no-gui_realtime_playback
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_rgbd_target --debug_cube_isolated_scene --debug_cube_pos 0.70,-0.16,0.5625 --arm_motion_backend curobo_right_arm --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 6 --warmup_steps 60 --cycle_interval_steps 1 --trajectory_steps 180 --safe_pregrasp_steps 80 --grasp_steps 100 --lift_steps 120 --hold_steps 40 --max_joint_step 0.02 --post_action_hold_steps 20 --no-gui_realtime_playback
 ```
 
 Static truth-source file-output check:
@@ -432,8 +464,8 @@ Static truth-source file-output check:
 Mainline v28/Nav2/physical-grasp run:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 1200s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
+cd mda_isaaclab
+timeout 1200s python \
   task_319_garbage_sort/task319_grasp_sort_sm.py \
   --mind_sort_demo \
   --mind_sort_max_objects 1
@@ -483,8 +515,8 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile \
+cd mda_isaaclab
+python -m py_compile \
   task_319_garbage_sort/visual_grasp_record_demo.py \
   task_319_garbage_sort/task319_grasp_sort_sm.py \
   task_319_garbage_sort/curobo_right_arm.py
@@ -493,8 +525,8 @@ cd /home/zhxm/workspace/mda_isaaclab
 Current mainline command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
 ```
 
 ## 2026-06-24: Harden cuRobo right-arm adapter for the current Kuavo model
@@ -530,13 +562,13 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile \
+cd mda_isaaclab
+python -m py_compile \
   task_319_garbage_sort/curobo_right_arm.py \
   task_319_garbage_sort/visual_grasp_record_demo.py \
   task_319_garbage_sort/task319_grasp_sort_sm.py
 
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
+python \
   task_319_garbage_sort/scripts/curobo_right_arm_smoke.py \
   --max_attempts 2 \
   --output task_319_garbage_sort/output/curobo_right_arm_smoke_after_adapter.json
@@ -554,8 +586,8 @@ Smoke result:
 Isolated IsaacLab cube check:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 260s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python \
+cd mda_isaaclab
+timeout 260s python \
   task_319_garbage_sort/task319_grasp_sort_sm.py \
   --headless \
   --debug_cube_grasp_demo \
@@ -590,8 +622,8 @@ failure was physical verification, not cuRobo reachability:
 Current mainline command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
 ```
 
 ## 2026-06-24: Make cuRobo and angled top-down grasp the default
@@ -611,15 +643,15 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py task_319_garbage_sort/curobo_right_arm.py
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py task_319_garbage_sort/curobo_right_arm.py
 ```
 
 Current mainline command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
 ```
 
 ## 2026-06-24: Make physical grasp the default mind-sort mainline
@@ -643,16 +675,16 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --help | rg -n "mind_sort_simulated_pick|mind_sort_physical_grasp|record_video|viss_qwen_timeout_s|nav2_goal_timeout_s|wheel_ground_coupling|mind_sort_demo"
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
+python task_319_garbage_sort/task319_grasp_sort_sm.py --help | rg -n "mind_sort_simulated_pick|mind_sort_physical_grasp|record_video|viss_qwen_timeout_s|nav2_goal_timeout_s|wheel_ground_coupling|mind_sort_demo"
 ```
 
 Current mainline command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
 ```
 
 ## 2026-06-24: Add physical grasp target alignment image
@@ -700,9 +732,9 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --mind_sort_demo --mind_sort_physical_grasp --mind_sort_max_objects 1 --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 6 --observer_camera_pos 2.0,-2.8,2.2 --observer_camera_target 1.45,0.0,0.55 --robot_pos 0.18,0.0,0.0 --robot_yaw 0.0 --gripper_tcp_feedback_correction --warmup_steps 80 --mind_sort_settle_steps 180 --cycle_interval_steps 1 --trajectory_steps 340 --grasp_steps 220 --lift_steps 240 --hold_steps 140 --max_joint_step 0.010 --grasp_error_threshold_m 0.006 --post_action_hold_steps 120 --no-gui_realtime_playback
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py
+python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --mind_sort_demo --mind_sort_physical_grasp --mind_sort_max_objects 1 --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 6 --observer_camera_pos 2.0,-2.8,2.2 --observer_camera_target 1.45,0.0,0.55 --robot_pos 0.18,0.0,0.0 --robot_yaw 0.0 --gripper_tcp_feedback_correction --warmup_steps 80 --mind_sort_settle_steps 180 --cycle_interval_steps 1 --trajectory_steps 340 --grasp_steps 220 --lift_steps 240 --hold_steps 140 --max_joint_step 0.010 --grasp_error_threshold_m 0.006 --post_action_hold_steps 120 --no-gui_realtime_playback
 ```
 
 ## 2026-06-24: Add reported suction-assist fallback to the Nav2 mind-sort loop
@@ -726,9 +758,9 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --help | rg "mind_sort_suction_assist"
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
+python task_319_garbage_sort/task319_grasp_sort_sm.py --help | rg "mind_sort_suction_assist"
 ```
 
 ## 2026-06-24: Retire GLM and legacy YOLO from the official visual mainline
@@ -747,9 +779,9 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --help | rg "perception_source"
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
+python task_319_garbage_sort/task319_grasp_sort_sm.py --help | rg "perception_source"
 ```
 
 Expected:
@@ -777,9 +809,9 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_static --debug_cube_pos 0.70,-0.16,0.5625 --whole_body_ik_assist off --torso_preshape_assist --torso_preshape_probe_steps 60 --torso_preshape_move_steps 100 --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 60 --cycle_interval_steps 1 --trajectory_steps 260 --grasp_steps 120 --lift_steps 160 --hold_steps 80 --max_joint_step 0.010 --post_action_hold_steps 80 --no-gui_realtime_playback
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
+python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_static --debug_cube_pos 0.70,-0.16,0.5625 --whole_body_ik_assist off --torso_preshape_assist --torso_preshape_probe_steps 60 --torso_preshape_move_steps 100 --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 60 --cycle_interval_steps 1 --trajectory_steps 260 --grasp_steps 120 --lift_steps 160 --hold_steps 80 --max_joint_step 0.010 --post_action_hold_steps 80 --no-gui_realtime_playback
 ```
 
 Recorded runs:
@@ -827,10 +859,10 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_static --debug_cube_pos 0.70,-0.16,0.5625 --whole_body_ik_assist waist --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --grasp_steps 220 --lift_steps 260 --hold_steps 160 --max_joint_step 0.010 --post_action_hold_steps 240 --no-gui_realtime_playback
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_static --debug_cube_pos 0.70,-0.16,0.5625 --whole_body_ik_assist waist_leg --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --grasp_steps 220 --lift_steps 260 --hold_steps 160 --max_joint_step 0.010 --post_action_hold_steps 240 --no-gui_realtime_playback
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
+python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_static --debug_cube_pos 0.70,-0.16,0.5625 --whole_body_ik_assist waist --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --grasp_steps 220 --lift_steps 260 --hold_steps 160 --max_joint_step 0.010 --post_action_hold_steps 240 --no-gui_realtime_playback
+python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_static --debug_cube_pos 0.70,-0.16,0.5625 --whole_body_ik_assist waist_leg --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --grasp_steps 220 --lift_steps 260 --hold_steps 160 --max_joint_step 0.010 --post_action_hold_steps 240 --no-gui_realtime_playback
 ```
 
 Recorded runs:
@@ -897,9 +929,9 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_static --debug_cube_pos 0.70,-0.16,0.5625 --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --grasp_steps 220 --lift_steps 260 --hold_steps 160 --max_joint_step 0.010 --post_action_hold_steps 240 --no-gui_realtime_playback
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
+python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --debug_cube_grasp_demo --debug_cube_isolated_scene --debug_cube_static --debug_cube_pos 0.70,-0.16,0.5625 --num_cycles 1 --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --grasp_steps 220 --lift_steps 260 --hold_steps 160 --max_joint_step 0.010 --post_action_hold_steps 240 --no-gui_realtime_playback
 ```
 
 Recorded runs:
@@ -958,9 +990,9 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --mind_sort_demo --mind_sort_physical_grasp --mind_sort_max_objects 3 --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 80 --cycle_interval_steps 1 --nav_backend nav2 --nav_actuation_mode wheel --wheel_drive_model urdf_diagonal --wheel_ground_coupling kinematic_stable --wheel_velocity_scale 0.35 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 0 --nav2_planner_tolerance 0.12 --nav2_xy_goal_tolerance 0.06 --nav2_yaw_goal_tolerance 0.12 --nav_final_dock --nav_final_dock_position_tolerance 0.025 --nav_final_dock_yaw_tolerance 0.04 --mind_sort_settle_steps 80 --viss_qwen_verify_mode all --viss_qwen_max_candidates 0 --viss_qwen_max_roi_refine 0 --viss_qwen_timeout_s 0 --trajectory_steps 360 --safe_pregrasp_steps 160 --wrist_refine_steps 140 --grasp_steps 140 --lift_steps 220 --hold_steps 120 --drop_steps 100 --post_action_hold_steps 120 --no-gui_realtime_playback
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
+python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --mind_sort_demo --mind_sort_physical_grasp --mind_sort_max_objects 3 --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 80 --cycle_interval_steps 1 --nav_backend nav2 --nav_actuation_mode wheel --wheel_drive_model urdf_diagonal --wheel_ground_coupling kinematic_stable --wheel_velocity_scale 0.35 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 0 --nav2_planner_tolerance 0.12 --nav2_xy_goal_tolerance 0.06 --nav2_yaw_goal_tolerance 0.12 --nav_final_dock --nav_final_dock_position_tolerance 0.025 --nav_final_dock_yaw_tolerance 0.04 --mind_sort_settle_steps 80 --viss_qwen_verify_mode all --viss_qwen_max_candidates 0 --viss_qwen_max_roi_refine 0 --viss_qwen_timeout_s 0 --trajectory_steps 360 --safe_pregrasp_steps 160 --wrist_refine_steps 140 --grasp_steps 140 --lift_steps 220 --hold_steps 120 --drop_steps 100 --post_action_hold_steps 120 --no-gui_realtime_playback
 ```
 
 Recorded run:
@@ -1010,8 +1042,8 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py task_319_garbage_sort/scripts/ros2_nav2_stack_launcher.py
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py task_319_garbage_sort/scripts/ros2_nav2_stack_launcher.py
 /usr/bin/python3 task_319_garbage_sort/scripts/ros2_nav2_stack_launcher.py --output-dir /tmp/task319_nav2_params_check --xy-goal-tolerance 0.06 --yaw-goal-tolerance 0.12 --planner-tolerance 0.12
 ```
 
@@ -1049,8 +1081,8 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
 
 Recorded diagnostic run:
@@ -1085,8 +1117,8 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py
 ```
 
 Recorded run:
@@ -1128,14 +1160,14 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py viss/scripts/perception/yolo11_qwen_perception_offline.py
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py viss/scripts/perception/yolo11_qwen_perception_offline.py
 ```
 
 Delivery command:
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo --mind_sort_max_objects 0 --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 80 --cycle_interval_steps 1 --nav_backend nav2 --nav_actuation_mode wheel --wheel_drive_model urdf_diagonal --wheel_ground_coupling kinematic_stable --wheel_velocity_scale 0.35 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 0 --mind_sort_settle_steps 120 --viss_qwen_verify_mode all --viss_qwen_max_candidates 0 --viss_qwen_max_roi_refine 0 --viss_qwen_timeout_s 0 --grasp_steps 80 --drop_steps 120 --post_action_hold_steps 240
+python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo --mind_sort_max_objects 0 --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 80 --cycle_interval_steps 1 --nav_backend nav2 --nav_actuation_mode wheel --wheel_drive_model urdf_diagonal --wheel_ground_coupling kinematic_stable --wheel_velocity_scale 0.35 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 0 --mind_sort_settle_steps 120 --viss_qwen_verify_mode all --viss_qwen_max_candidates 0 --viss_qwen_max_roi_refine 0 --viss_qwen_timeout_s 0 --grasp_steps 80 --drop_steps 120 --post_action_hold_steps 240
 ```
 
 ## 2026-06-24: Visual mind-sort Nav2 demo with simulated object carry/drop
@@ -1174,9 +1206,9 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
-timeout 1800s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --mind_sort_demo --mind_sort_max_objects 0 --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 80 --cycle_interval_steps 1 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 150 --mind_sort_settle_steps 120 --grasp_steps 80 --drop_steps 120 --post_action_hold_steps 240 --no-gui_realtime_playback
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
+timeout 1800s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --mind_sort_demo --mind_sort_max_objects 0 --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 80 --cycle_interval_steps 1 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 150 --mind_sort_settle_steps 120 --grasp_steps 80 --drop_steps 120 --post_action_hold_steps 240 --no-gui_realtime_playback
 ```
 
 Result:
@@ -1220,10 +1252,10 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --help | rg "standpoint_nav_only|dynamic_grasp"
-timeout 420s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --perception_source v28_original --standpoint_nav_only --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 80 --cycle_interval_steps 1 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 150 --post_action_hold_steps 120 --no-gui_realtime_playback
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
+python task_319_garbage_sort/task319_grasp_sort_sm.py --help | rg "standpoint_nav_only|dynamic_grasp"
+timeout 420s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --perception_source v28_original --standpoint_nav_only --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 4 --warmup_steps 80 --cycle_interval_steps 1 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 150 --post_action_hold_steps 120 --no-gui_realtime_playback
 ```
 
 Result:
@@ -1257,16 +1289,16 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --help | rg "dynamic_grasp|dynamic_observe|robot_pos|grasp_standpoint_nav"
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
+python task_319_garbage_sort/task319_grasp_sort_sm.py --help | rg "dynamic_grasp|dynamic_observe|robot_pos|grasp_standpoint_nav"
 ```
 
 Light visual-planning run:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --perception_source v28_original --record_debug --warmup_steps 40 --cycle_interval_steps 1 --post_action_hold_steps 0 --no-gui_realtime_playback
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --perception_source v28_original --record_debug --warmup_steps 40 --cycle_interval_steps 1 --post_action_hold_steps 0 --no-gui_realtime_playback
 ```
 
 Result:
@@ -1297,16 +1329,16 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --help | rg "grasp_standpoint|enable_sort_nav"
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
+python task_319_garbage_sort/task319_grasp_sort_sm.py --help | rg "grasp_standpoint|enable_sort_nav"
 ```
 
 Main run command for visual inspection:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --perception_source v28_original --grasp_standpoint_nav --execute_grasp --enable_sort_nav --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 3 --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 300 --lift_steps 360 --hold_steps 240 --max_joint_step 0.012 --no-grasp_ik_prescreen --lift_height 0.10 --arm_motion_wrist_orientation angled_top_down --angled_top_down_tcp_axis 0.65,0,-0.76 --arm_motion_converge_extra_steps 800 --arm_motion_converge_chunk_steps 80 --grasp_error_threshold_m 0.015 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 150 --post_action_hold_steps 1200
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --perception_source v28_original --grasp_standpoint_nav --execute_grasp --enable_sort_nav --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 3 --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 300 --lift_steps 360 --hold_steps 240 --max_joint_step 0.012 --no-grasp_ik_prescreen --lift_height 0.10 --arm_motion_wrist_orientation angled_top_down --angled_top_down_tcp_axis 0.65,0,-0.76 --arm_motion_converge_extra_steps 800 --arm_motion_converge_chunk_steps 80 --grasp_error_threshold_m 0.015 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 150 --post_action_hold_steps 1200
 ```
 
 ## 2026-06-23: Angled top-down grasp default for better cube-center alignment
@@ -1332,8 +1364,8 @@ Rationale:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
 
 Strict diagnostic runs:
@@ -1344,8 +1376,8 @@ Strict diagnostic runs:
 Successful dynamic cube validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --debug_cube_grasp_demo --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 3 --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 300 --lift_steps 360 --hold_steps 240 --max_joint_step 0.012 --no-grasp_ik_prescreen --lift_height 0.10 --arm_motion_wrist_orientation angled_top_down --angled_top_down_tcp_axis 0.65,0,-0.76 --arm_motion_converge_extra_steps 800 --arm_motion_converge_chunk_steps 80 --grasp_error_threshold_m 0.015 --post_action_hold_steps 120 --no-gui_realtime_playback
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --debug_cube_grasp_demo --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 3 --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 300 --lift_steps 360 --hold_steps 240 --max_joint_step 0.012 --no-grasp_ik_prescreen --lift_height 0.10 --arm_motion_wrist_orientation angled_top_down --angled_top_down_tcp_axis 0.65,0,-0.76 --arm_motion_converge_extra_steps 800 --arm_motion_converge_chunk_steps 80 --grasp_error_threshold_m 0.015 --post_action_hold_steps 120 --no-gui_realtime_playback
 ```
 
 Result:
@@ -1378,8 +1410,8 @@ Rationale:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/gripper_robot_urdf.py task_319_garbage_sort/curobo_right_arm.py task_319_garbage_sort/grasp_pipeline/grasping/anygrasp_wrapper.py
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/gripper_robot_urdf.py task_319_garbage_sort/curobo_right_arm.py task_319_garbage_sort/grasp_pipeline/grasping/anygrasp_wrapper.py
 ```
 
 Static checks:
@@ -1392,8 +1424,8 @@ Static checks:
 Dynamic cube grasp validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --debug_cube_grasp_demo --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 3 --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 300 --lift_steps 360 --hold_steps 240 --max_joint_step 0.012 --no-grasp_ik_prescreen --lift_height 0.10 --arm_motion_converge_extra_steps 360 --arm_motion_converge_chunk_steps 80 --post_action_hold_steps 120 --no-gui_realtime_playback
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --debug_cube_grasp_demo --execute_grasp --record_debug --record_video --video_width 1280 --video_height 720 --video_sample_stride 3 --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 300 --lift_steps 360 --hold_steps 240 --max_joint_step 0.012 --no-grasp_ik_prescreen --lift_height 0.10 --arm_motion_converge_extra_steps 360 --arm_motion_converge_chunk_steps 80 --post_action_hold_steps 120 --no-gui_realtime_playback
 ```
 
 Result:
@@ -1421,15 +1453,15 @@ Rationale:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 python3 -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
 
 Viewer command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --post_action_hold_steps 1200
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --post_action_hold_steps 1200
 ```
 
 ## 2026-06-23: Switch official perception default to v28 qwen-first ROI chain
@@ -1444,15 +1476,15 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 python3 -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
 
 Launch command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --post_action_hold_steps 1200
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --post_action_hold_steps 1200
 ```
 
 ## 2026-06-23: Widen attached gripper and slow close command
@@ -1468,15 +1500,15 @@ Change:
 Validation:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/grasp_pipeline/execution/gripper_control.py task_319_garbage_sort/grasp_pipeline/grasping/mask_filter.py task_319_garbage_sort/grasp_pipeline/grasping/grasp_selector.py
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/grasp_pipeline/execution/gripper_control.py task_319_garbage_sort/grasp_pipeline/grasping/mask_filter.py task_319_garbage_sort/grasp_pipeline/grasping/grasp_selector.py
 ```
 
 Formal v27 + cuRobo validation, same current configuration:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-env -u PYTHONHOME -u PYTHONPATH CUDA_HOME=/home/zhxm/miniconda3/envs/my_task319_safe PATH=/home/zhxm/miniconda3/envs/my_task319_safe/bin:$PATH LD_LIBRARY_PATH=/home/zhxm/miniconda3/envs/my_task319_safe/lib:${LD_LIBRARY_PATH:-} /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --perception_source v27_original --viss_qwen_model viss/models/yolo11s-seg-best.pt --viss_qwen_api_style dashscope --skip_graspnet --use_centroid_fallback --no-target_reachability_ik_check --no-grasp_ik_prescreen --arm_motion_backend curobo_right_arm --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 120 --safe_pregrasp_steps 90 --curobo_command_min_steps 90 --grasp_steps 80 --lift_steps 120 --hold_steps 120 --grasp_error_threshold_m 0.03 --arm_motion_converge_extra_steps 260 --arm_motion_converge_chunk_steps 80 --curobo_tcp_refine_steps 160 --post_action_hold_steps 0 --no-gui_realtime_playback
+cd mda_isaaclab
+env -u PYTHONHOME -u PYTHONPATH CUDA_HOME="${CONDA_PREFIX}" PATH="${CONDA_PREFIX}/bin:$PATH" LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}" python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --perception_source v27_original --viss_qwen_model viss/models/yolo11s-seg-best.pt --viss_qwen_api_style dashscope --skip_graspnet --use_centroid_fallback --no-target_reachability_ik_check --no-grasp_ik_prescreen --arm_motion_backend curobo_right_arm --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 120 --safe_pregrasp_steps 90 --curobo_command_min_steps 90 --grasp_steps 80 --lift_steps 120 --hold_steps 120 --grasp_error_threshold_m 0.03 --arm_motion_converge_extra_steps 260 --arm_motion_converge_chunk_steps 80 --curobo_tcp_refine_steps 160 --post_action_hold_steps 0 --no-gui_realtime_playback
 ```
 
 Result:
@@ -1513,7 +1545,7 @@ Validation:
 - Static checks passed:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
 
@@ -1535,8 +1567,8 @@ Video: task_319_garbage_sort/output/head_camera_grasp_records/20260623_183546/ex
 Viewer command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --skip_graspnet --use_centroid_fallback --target_object_name marker --no-target_self_occlusion_filter --no-target_reachability_ik_check --no-grasp_ik_prescreen --arm_motion_backend kuavo_analytic_ik --arm_motion_wrist_orientation current --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 180 --safe_pregrasp_steps 80 --grasp_steps 70 --lift_steps 140 --hold_steps 40 --max_joint_step 0.018 --post_action_hold_steps 0
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --skip_graspnet --use_centroid_fallback --target_object_name marker --no-target_self_occlusion_filter --no-target_reachability_ik_check --no-grasp_ik_prescreen --arm_motion_backend kuavo_analytic_ik --arm_motion_wrist_orientation current --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 180 --safe_pregrasp_steps 80 --grasp_steps 70 --lift_steps 140 --hold_steps 40 --max_joint_step 0.018 --post_action_hold_steps 0
 ```
 
 ## 2026-06-23: Kuavo official analytic IK seed + explicit gripper TCP handling
@@ -1555,7 +1587,7 @@ Validation:
 - Static checks passed:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
 g++ -std=c++17 -O2 -I/usr/include/eigen3 -Ikuavo-ros-opensource/src/manipulation_nodes/motion_capture_ik/include task_319_garbage_sort/scripts/kuavo_analytic_ik_cli.cpp -o task_319_garbage_sort/build/kuavo_analytic_ik_cli
 ```
@@ -1574,8 +1606,8 @@ Video: task_319_garbage_sort/output/head_camera_grasp_records/20260623_182054/ex
 Viewer command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --skip_graspnet --use_centroid_fallback --no-target_reachability_ik_check --no-grasp_ik_prescreen --arm_motion_backend kuavo_analytic_ik --arm_motion_wrist_orientation current --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 300 --grasp_steps 120 --lift_steps 220 --hold_steps 180 --max_joint_step 0.025 --post_action_hold_steps 1200
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --skip_graspnet --use_centroid_fallback --no-target_reachability_ik_check --no-grasp_ik_prescreen --arm_motion_backend kuavo_analytic_ik --arm_motion_wrist_orientation current --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 300 --grasp_steps 120 --lift_steps 220 --hold_steps 180 --max_joint_step 0.025 --post_action_hold_steps 1200
 ```
 
 ## 2026-06-23: Position-only grasp motion primitive and Kuavo IK bridge hook
@@ -1599,15 +1631,15 @@ Change:
 Validation commands:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 python3 -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py task_319_garbage_sort/scripts/kuavo_ik_socket_bridge.py
 ```
 
 Default grasp simulation command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --grasp_backend graspnet --graspnet_force_objectness_top_k 64 --no-target_reachability_ik_check --no-grasp_ik_prescreen --arm_motion_backend local_position_primitive --arm_motion_wrist_orientation current --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 360 --grasp_steps 120 --lift_steps 220 --hold_steps 180 --max_joint_step 0.025 --post_action_hold_steps 1200
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --grasp_backend graspnet --graspnet_force_objectness_top_k 64 --no-target_reachability_ik_check --no-grasp_ik_prescreen --arm_motion_backend local_position_primitive --arm_motion_wrist_orientation current --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 360 --grasp_steps 120 --lift_steps 220 --hold_steps 180 --max_joint_step 0.025 --post_action_hold_steps 1200
 ```
 
 Latest headless validation:
@@ -1635,7 +1667,7 @@ Video: task_319_garbage_sort/output/head_camera_grasp_records/20260623_171739/ex
 Optional official Kuavo IK bridge startup:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 source kuavo-ros-opensource/devel_mda319/setup.bash
 python3 task_319_garbage_sort/scripts/kuavo_ik_socket_bridge.py --host 127.0.0.1 --port 31975 --service /ik/two_arm_hand_pose_cmd_srv_muli_refer
 ```
@@ -1652,13 +1684,13 @@ Change:
 Validation commands:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 python3 -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py task_319_garbage_sort/grasp_pipeline/grasping/graspnet_wrapper.py
 ```
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 1200s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --grasp_backend graspnet --graspnet_force_objectness_top_k 64 --no-target_reachability_ik_check --no-grasp_ik_prescreen --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --post_action_hold_steps 0
+cd mda_isaaclab
+timeout 1200s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --grasp_backend graspnet --graspnet_force_objectness_top_k 64 --no-target_reachability_ik_check --no-grasp_ik_prescreen --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --post_action_hold_steps 0
 ```
 
 Observed result:
@@ -1694,8 +1726,8 @@ Change:
 Validation command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 420s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --skip_graspnet --no-target_reachability_ik_check --record_debug --warmup_steps 20 --cycle_interval_steps 1 --post_action_hold_steps 0
+cd mda_isaaclab
+timeout 420s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --skip_graspnet --no-target_reachability_ik_check --record_debug --warmup_steps 20 --cycle_interval_steps 1 --post_action_hold_steps 0
 ```
 
 Observed result:
@@ -1721,7 +1753,7 @@ Change:
 Validation command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 python3 -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
 
@@ -1729,7 +1761,7 @@ Run result:
 
 ```text
 Run: task_319_garbage_sort/output/head_camera_grasp_records/20260623_155819
-Command: timeout 900s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --post_action_hold_steps 0
+Command: timeout 900s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --post_action_hold_steps 0
 v27_original: model=viss/models/yolo11s-seg-best.pt, pipeline=qwen_first, accepted=7
 Reachability policy: rgbd_geometric_center_only
 Closest center candidates: trash_07/black marker error=0.165 m, trash_05/green and yellow can error=0.172 m, threshold=0.070 m
@@ -1746,7 +1778,7 @@ Change:
 Validation command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 python3 -m py_compile viss/scripts/perception/yolo11_qwen_perception_offline.py task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
 
@@ -1762,7 +1794,7 @@ Change:
 Validation command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 python3 -m py_compile viss/scripts/perception/yolo11_qwen_perception_offline.py task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
 
@@ -1777,7 +1809,7 @@ Change:
 Validation command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 python3 -m py_compile viss/scripts/perception/yolo11_qwen_perception_offline.py task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
 
@@ -1785,13 +1817,13 @@ Smoke validation:
 
 ```text
 Run: task_319_garbage_sort/output/head_camera_grasp_records/20260623_125738
-Command: timeout 480s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --skip_graspnet --use_centroid_fallback --record_debug --warmup_steps 2 --cycle_interval_steps 1 --post_action_hold_steps 0
+Command: timeout 480s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --skip_graspnet --use_centroid_fallback --record_debug --warmup_steps 2 --cycle_interval_steps 1 --post_action_hold_steps 0
 v27_original: planner=3, approach=5, accepted=8
 Selection: policy=one_object_per_cycle_score_lowest_after_hard_filters, valid=5, rejected=3, selected=green-yellow can/可回收物
 Selected score: total=1417.763, point_count=908, nearest_xy=0.2166 m
 
 Run: task_319_garbage_sort/output/head_camera_grasp_records/20260623_125947
-Command: timeout 300s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --record_debug --warmup_steps 2 --cycle_interval_steps 1 --trajectory_steps 20 --grasp_steps 5 --lift_steps 5 --hold_steps 5 --post_action_hold_steps 0
+Command: timeout 300s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --record_debug --warmup_steps 2 --cycle_interval_steps 1 --trajectory_steps 20 --grasp_steps 5 --lift_steps 5 --hold_steps 5 --post_action_hold_steps 0
 Reachability gate: requires_reachable=True, valid=5, all reachable=False, target=None, execution blocked before grasp/navigation.
 ```
 
@@ -1807,7 +1839,7 @@ Change:
 Validation command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 python3 -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
 
@@ -1815,7 +1847,7 @@ Smoke validation:
 
 ```text
 Run: task_319_garbage_sort/output/head_camera_grasp_records/20260623_124452
-Command: timeout 480s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --skip_graspnet --use_centroid_fallback --record_debug --warmup_steps 2 --cycle_interval_steps 1 --post_action_hold_steps 0
+Command: timeout 480s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --skip_graspnet --use_centroid_fallback --record_debug --warmup_steps 2 --cycle_interval_steps 1 --post_action_hold_steps 0
 v27_original: pipeline=qwen_first, planner=2, approach=4, accepted=6, rejected_debug=4
 Selected target: source=v27_original, object=海绵, category=其他垃圾, center=[1.0326473712921143, -0.15174487233161926, 0.6213397979736328]
 Execution: not run in this smoke test; grasp_source=fallback candidate was generated.
@@ -1831,7 +1863,7 @@ Change:
 Validation command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 python3 -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py
 ```
 
@@ -1845,7 +1877,7 @@ Change:
 Validation command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 python3 -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py
 ```
 
@@ -1860,7 +1892,7 @@ Change:
 Validation command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 python3 -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py
 ```
 
@@ -1874,7 +1906,7 @@ Change:
 Syntax check:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 python3 -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py
 ```
 
@@ -1887,7 +1919,7 @@ Change:
 Syntax check:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 python3 -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py
 ```
 
@@ -1910,22 +1942,22 @@ export QWEN_API_STYLE='dashscope'
 API check:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python viss/scripts/perception/yolo11_qwen_perception_offline.py --qwen-api-check --qwen-api-style dashscope
+cd mda_isaaclab
+python viss/scripts/perception/yolo11_qwen_perception_offline.py --qwen-api-check --qwen-api-style dashscope
 ```
 
 Syntax check:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 python3 -m py_compile viss/scripts/perception/yolo11_qwen_perception_offline.py task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
 
 GUI launch command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --perception_source viss_qwen_first --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --post_action_hold_steps 1200
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --perception_source viss_qwen_first --num_cycles 1 --skip_graspnet --use_centroid_fallback --execute_grasp --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --post_action_hold_steps 1200
 ```
 
 ## 2026-06-23: Remove remote Isaac ground USD dependency from main scene startup
@@ -1938,15 +1970,15 @@ Change:
 Syntax check:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 python3 -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
 
 Startup verification:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 180s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --skip_yolo --skip_vlm --skip_graspnet --warmup_steps 2 --cycle_interval_steps 1 --post_action_hold_steps 0
+cd mda_isaaclab
+timeout 180s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --skip_yolo --skip_vlm --skip_graspnet --warmup_steps 2 --cycle_interval_steps 1 --post_action_hold_steps 0
 ```
 
 Observed result:
@@ -1984,15 +2016,15 @@ Change:
 Syntax check:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
 
 Verification:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 720s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --dynamic_standpoint_nav_demo --dynamic_target_world_xyz 1.20,0.00,0.60 --dynamic_allowed_table_sides front,left,right --nav_backend nav2 --wheel_drive_model urdf_diagonal --wheel_ground_coupling kinematic_stable --wheel_velocity_scale 0.35 --record_debug --record_video --warmup_steps 80 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 150 --video_sample_stride 4 --post_action_hold_steps 0
+cd mda_isaaclab
+timeout 720s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --dynamic_standpoint_nav_demo --dynamic_target_world_xyz 1.20,0.00,0.60 --dynamic_allowed_table_sides front,left,right --nav_backend nav2 --wheel_drive_model urdf_diagonal --wheel_ground_coupling kinematic_stable --wheel_velocity_scale 0.35 --record_debug --record_video --warmup_steps 80 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 150 --video_sample_stride 4 --post_action_hold_steps 0
 ```
 
 Observed result:
@@ -2039,8 +2071,8 @@ Change:
 Syntax check:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab/task_319_garbage_sort
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile visual_grasp_record_demo.py task319_grasp_sort_sm.py
+cd mda_isaaclab/task_319_garbage_sort
+python -m py_compile visual_grasp_record_demo.py task319_grasp_sort_sm.py
 /usr/bin/python3 -m py_compile scripts/ros2_cmd_vel_test_publisher.py scripts/ros2_cmd_vel_socket_server.py scripts/kuavo_ros1_cmd_vel_socket_client.py
 ```
 
@@ -2067,15 +2099,15 @@ yaw drift:    -0.0000507 rad
 New stable straight verification command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 480s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --ros_cmd_vel_demo --record_debug --record_video --ros_cmd_vel_demo_steps 240 --ros_cmd_vel_demo_linear_x 0.20 --ros_cmd_vel_demo_angular_z 0.0 --ros_cmd_vel_demo_min_translation_m 0.05 --video_sample_stride 4 --post_action_hold_steps 0 --wheel_drive_model urdf_diagonal --wheel_ground_coupling kinematic_stable --wheel_velocity_scale 0.35
+cd mda_isaaclab
+timeout 480s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --ros_cmd_vel_demo --record_debug --record_video --ros_cmd_vel_demo_steps 240 --ros_cmd_vel_demo_linear_x 0.20 --ros_cmd_vel_demo_angular_z 0.0 --ros_cmd_vel_demo_min_translation_m 0.05 --video_sample_stride 4 --post_action_hold_steps 0 --wheel_drive_model urdf_diagonal --wheel_ground_coupling kinematic_stable --wheel_velocity_scale 0.35
 ```
 
 Nav2 waypoint validation with the new stable adapter:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 720s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --waypoint_nav_demo --waypoint_route home,table_left --nav_backend nav2 --record_debug --record_video --warmup_steps 80 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 150 --post_action_hold_steps 0 --wheel_drive_model urdf_diagonal --wheel_ground_coupling kinematic_stable --wheel_velocity_scale 0.35 --video_sample_stride 4
+cd mda_isaaclab
+timeout 720s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --waypoint_nav_demo --waypoint_route home,table_left --nav_backend nav2 --record_debug --record_video --warmup_steps 80 --nav2_stack_startup_s 2 --nav2_goal_timeout_s 150 --post_action_hold_steps 0 --wheel_drive_model urdf_diagonal --wheel_ground_coupling kinematic_stable --wheel_velocity_scale 0.35 --video_sample_stride 4
 ```
 
 Observed Nav2 result:
@@ -2106,16 +2138,16 @@ Change:
 Syntax check:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
 /usr/bin/python3 -m py_compile task_319_garbage_sort/scripts/ros2_cmd_vel_test_publisher.py task_319_garbage_sort/scripts/ros2_cmd_vel_socket_server.py task_319_garbage_sort/scripts/kuavo_ros1_cmd_vel_socket_client.py
 ```
 
 Verification:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 480s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --ros_cmd_vel_demo --record_debug --record_video --ros_cmd_vel_demo_steps 240 --ros_cmd_vel_demo_linear_x 0.20 --ros_cmd_vel_demo_angular_z 0.0 --ros_cmd_vel_demo_min_translation_m 0.05 --video_sample_stride 4 --post_action_hold_steps 0
+cd mda_isaaclab
+timeout 480s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --ros_cmd_vel_demo --record_debug --record_video --ros_cmd_vel_demo_steps 240 --ros_cmd_vel_demo_linear_x 0.20 --ros_cmd_vel_demo_angular_z 0.0 --ros_cmd_vel_demo_min_translation_m 0.05 --video_sample_stride 4 --post_action_hold_steps 0
 ```
 
 Observed result:
@@ -2156,7 +2188,7 @@ Change:
 Syntax check:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 /usr/bin/python3 -m py_compile task_319_garbage_sort/scripts/ros2_cmd_vel_socket_server.py task_319_garbage_sort/scripts/kuavo_ros1_cmd_vel_socket_client.py
 ```
 
@@ -2219,15 +2251,15 @@ Change:
 Syntax check:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/official_holonomic_wheel_test.py task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/scripts/ros2_nav2_stack_launcher.py
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/official_holonomic_wheel_test.py task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/scripts/ros2_nav2_stack_launcher.py
 ```
 
 Verification:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 260s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/official_holonomic_wheel_test.py --headless --record_debug --controller_backend differential --warmup_steps 5 --drive_steps 40 --cmd_vx 0.18 --cmd_vy 0.0 --cmd_wz 0.0
+cd mda_isaaclab
+timeout 260s python task_319_garbage_sort/official_holonomic_wheel_test.py --headless --record_debug --controller_backend differential --warmup_steps 5 --drive_steps 40 --cmd_vx 0.18 --cmd_vy 0.0 --cmd_wz 0.0
 ```
 
 Observed result:
@@ -2267,22 +2299,22 @@ Change:
 Syntax check:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py task_319_garbage_sort/scripts/ros2_nav2_stack_launcher.py
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py task_319_garbage_sort/scripts/ros2_nav2_stack_launcher.py
 ```
 
 Visible verification command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --waypoint_nav_demo --waypoint_route home,table_left,bin_center,table_right,home --nav_backend nav2 --record_debug --record_video --warmup_steps 80 --nav2_stack_startup_s 2 --post_action_hold_steps 240
+cd mda_isaaclab
+python task_319_garbage_sort/task319_grasp_sort_sm.py --waypoint_nav_demo --waypoint_route home,table_left,bin_center,table_right,home --nav_backend nav2 --record_debug --record_video --warmup_steps 80 --nav2_stack_startup_s 2 --post_action_hold_steps 240
 ```
 
 Short anti-slip/yaw-damping verification:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 450s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --wheel_open_loop_demo --record_debug --record_video --warmup_steps 10 --wheel_open_loop_steps 30 --wheel_open_loop_linear_speed 0.20 --wheel_open_loop_angular_speed 0.0 --wheel_open_loop_min_translation_m 0.0
+cd mda_isaaclab
+timeout 450s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --wheel_open_loop_demo --record_debug --record_video --warmup_steps 10 --wheel_open_loop_steps 30 --wheel_open_loop_linear_speed 0.20 --wheel_open_loop_angular_speed 0.0 --wheel_open_loop_min_translation_m 0.0
 ```
 
 Observed result:
@@ -2309,8 +2341,8 @@ Change:
 Verification:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 900s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --waypoint_nav_demo --waypoint_route home,table_left,bin_center,table_right,home --nav_backend nav2 --record_debug --record_video --warmup_steps 80 --nav2_stack_startup_s 2
+cd mda_isaaclab
+timeout 900s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --waypoint_nav_demo --waypoint_route home,table_left,bin_center,table_right,home --nav_backend nav2 --record_debug --record_video --warmup_steps 80 --nav2_stack_startup_s 2
 ```
 
 Observed result:
@@ -2336,8 +2368,8 @@ Change:
 Verification:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 900s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --motion_only_sort_demo --nav_backend nav2 --motion_test_category 其他垃圾 --record_debug --record_video --warmup_steps 80 --nav2_stack_startup_s 2
+cd mda_isaaclab
+timeout 900s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --motion_only_sort_demo --nav_backend nav2 --motion_test_category 其他垃圾 --record_debug --record_video --warmup_steps 80 --nav2_stack_startup_s 2
 ```
 
 Observed result:
@@ -2365,7 +2397,7 @@ Change:
 Cold-start Nav2 smoke test:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 source task_319_garbage_sort/scripts/setup_nav2_user_install.bash
 /usr/bin/python3 task_319_garbage_sort/scripts/ros2_nav2_stack_launcher.py --output-dir task_319_garbage_sort/output/nav2_smoke_stack_cold
 ```
@@ -2373,7 +2405,7 @@ source task_319_garbage_sort/scripts/setup_nav2_user_install.bash
 Second terminal:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 source task_319_garbage_sort/scripts/setup_nav2_user_install.bash
 /usr/bin/python3 task_319_garbage_sort/scripts/ros2_nav2_smoke_test.py --goal-x 0.60 --goal-y 0.0 --goal-yaw 0.0 --timeout-s 55 --server-timeout-s 25 --goal-attempts 5 --retry-delay-s 2
 ```
@@ -2387,8 +2419,8 @@ Observed result:
 Isaac motion-only single-category Nav2 verification:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 700s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --motion_only_sort_demo --nav_backend nav2 --motion_test_category 其他垃圾 --record_debug --record_video --warmup_steps 80
+cd mda_isaaclab
+timeout 700s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --motion_only_sort_demo --nav_backend nav2 --motion_test_category 其他垃圾 --record_debug --record_video --warmup_steps 80
 ```
 
 Observed Isaac result:
@@ -2411,16 +2443,16 @@ Change:
 Strict GraspNet calibration-debug command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 export GLM_API_KEY='your GLM API key'
-timeout 420s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --strict_model_chain --record_debug --record_video --vlm_model glm-5v-turbo --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --mask_distance_threshold_m 0.02 --min_filtered_grasps 8 --ik_prescreen_top_k 20 --ik_prescreen_max_joint_delta_rad 4.5 --max_grasp_retries 3 --pregrasp_error_threshold_m 0.07 --grasp_error_threshold_m 0.06 --lift_error_threshold_m 0.08
+timeout 420s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --strict_model_chain --record_debug --record_video --vlm_model glm-5v-turbo --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --mask_distance_threshold_m 0.02 --min_filtered_grasps 8 --ik_prescreen_top_k 20 --ik_prescreen_max_joint_delta_rad 4.5 --max_grasp_retries 3 --pregrasp_error_threshold_m 0.07 --grasp_error_threshold_m 0.06 --lift_error_threshold_m 0.08
 ```
 
 Syntax check:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
 
 ## 2026-06-22: Experimental AnyGrasp backend with explicit TCP calibration
@@ -2435,16 +2467,16 @@ Change:
 AnyGrasp strict visual-grasp command after placing the licensed SDK assets:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 export GLM_API_KEY='your GLM API key'
-timeout 420s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --strict_model_chain --grasp_backend anygrasp --record_debug --record_video --vlm_model glm-5v-turbo --target_object_name potted --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --mask_distance_threshold_m 0.02 --min_filtered_grasps 8 --ik_prescreen_top_k 20 --ik_prescreen_max_joint_delta_rad 4.5 --max_grasp_retries 3 --pregrasp_error_threshold_m 0.07 --grasp_error_threshold_m 0.06 --lift_error_threshold_m 0.08 --anygrasp_grasp_to_tcp 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1
+timeout 420s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --strict_model_chain --grasp_backend anygrasp --record_debug --record_video --vlm_model glm-5v-turbo --target_object_name potted --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --mask_distance_threshold_m 0.02 --min_filtered_grasps 8 --ik_prescreen_top_k 20 --ik_prescreen_max_joint_delta_rad 4.5 --max_grasp_retries 3 --pregrasp_error_threshold_m 0.07 --grasp_error_threshold_m 0.06 --lift_error_threshold_m 0.08 --anygrasp_grasp_to_tcp 1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1
 ```
 
 Dependency check:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/scripts/prepare_grasp_deps.py --prepare_anygrasp_binaries --require_anygrasp
+cd mda_isaaclab
+python task_319_garbage_sort/scripts/prepare_grasp_deps.py --prepare_anygrasp_binaries --require_anygrasp
 ```
 
 ## 2026-06-22: GraspNet mask relaxation, IK prescreen, and Top-K retry
@@ -2459,16 +2491,16 @@ Change:
 Strict visual-grasp command with the new defaults made explicit:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 export GLM_API_KEY='your GLM API key'
-timeout 420s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --strict_model_chain --record_debug --record_video --vlm_model glm-5v-turbo --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --mask_distance_threshold_m 0.02 --min_filtered_grasps 8 --ik_prescreen_top_k 20 --ik_prescreen_max_joint_delta_rad 4.5 --max_grasp_retries 3 --pregrasp_error_threshold_m 0.07 --grasp_error_threshold_m 0.06 --lift_error_threshold_m 0.08
+timeout 420s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --strict_model_chain --record_debug --record_video --vlm_model glm-5v-turbo --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --mask_distance_threshold_m 0.02 --min_filtered_grasps 8 --ik_prescreen_top_k 20 --ik_prescreen_max_joint_delta_rad 4.5 --max_grasp_retries 3 --pregrasp_error_threshold_m 0.07 --grasp_error_threshold_m 0.06 --lift_error_threshold_m 0.08
 ```
 
 Syntax check:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py task_319_garbage_sort/grasp_pipeline/types.py task_319_garbage_sort/grasp_pipeline/grasping/mask_filter.py task_319_garbage_sort/grasp_pipeline/grasping/grasp_selector.py
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py task_319_garbage_sort/grasp_pipeline/types.py task_319_garbage_sort/grasp_pipeline/grasping/mask_filter.py task_319_garbage_sort/grasp_pipeline/grasping/grasp_selector.py
 ```
 
 ## 2026-06-22: Observer-camera grasp video recording
@@ -2482,8 +2514,8 @@ Change:
 Headless motion-evidence video command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 360s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --skip_vlm --skip_graspnet --use_centroid_fallback --target_object_name potted --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012
+cd mda_isaaclab
+timeout 360s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --skip_vlm --skip_graspnet --use_centroid_fallback --target_object_name potted --record_debug --record_video --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012
 ```
 
 ## 2026-06-22: GUI real-time grasp playback
@@ -2497,9 +2529,9 @@ Change:
 GUI strict visual-grasp display command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 export GLM_API_KEY='your GLM API key'
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --execute_grasp --strict_model_chain --record_debug --vlm_model glm-5v-turbo --target_object_name potted --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --post_action_hold_steps 1200
+python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --execute_grasp --strict_model_chain --record_debug --vlm_model glm-5v-turbo --target_object_name potted --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012 --post_action_hold_steps 1200
 ```
 
 ## 2026-06-22: Strict YOLO + GLM-VLM + GraspNet grasp chain
@@ -2514,9 +2546,9 @@ Change:
 Strict visual-grasp command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 export GLM_API_KEY='your GLM API key'
-timeout 360s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --strict_model_chain --record_debug --vlm_model glm-5v-turbo --target_object_name potted --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012
+timeout 360s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --strict_model_chain --record_debug --vlm_model glm-5v-turbo --target_object_name potted --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012
 ```
 
 Strict success requires:
@@ -2546,15 +2578,15 @@ Change:
 Syntax check:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
+cd mda_isaaclab
+python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_garbage_sort/task319_grasp_sort_sm.py
 ```
 
 Headless true-grasp verification command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 300s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --skip_vlm --skip_graspnet --use_centroid_fallback --target_object_name potted --record_debug --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012
+cd mda_isaaclab
+timeout 300s python task_319_garbage_sort/task319_grasp_sort_sm.py --headless --num_cycles 1 --execute_grasp --skip_vlm --skip_graspnet --use_centroid_fallback --target_object_name potted --record_debug --warmup_steps 80 --cycle_interval_steps 1 --trajectory_steps 520 --safe_pregrasp_steps 220 --grasp_steps 220 --lift_steps 300 --hold_steps 180 --max_joint_step 0.012
 ```
 
 Observed result from `output/head_camera_grasp_records/20260622_033759/cycle_0000/metadata.json`:
@@ -2566,9 +2598,9 @@ Observed result from `output/head_camera_grasp_records/20260622_033759/cycle_000
 GUI true-grasp command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
+cd mda_isaaclab
 export GLM_API_KEY='your GLM API key'
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --execute_grasp --record_debug --vlm_model glm-5v-turbo --use_centroid_fallback
+python task_319_garbage_sort/task319_grasp_sort_sm.py --num_cycles 1 --execute_grasp --record_debug --vlm_model glm-5v-turbo --use_centroid_fallback
 ```
 
 ## 2026-06-22: Kuavo default upright posture
@@ -2581,15 +2613,15 @@ Change:
 Display command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/phase1_scene_ros2_bridge.py --disable_lidar
+cd mda_isaaclab
+python task_319_garbage_sort/phase1_scene_ros2_bridge.py --disable_lidar
 ```
 
 Head-camera verification command:
 
 ```bash
-cd /home/zhxm/workspace/mda_isaaclab
-timeout 120s /home/zhxm/miniconda3/envs/my_task319_safe/bin/python task_319_garbage_sort/visual_grasp_record_demo.py --headless --num_cycles 1 --skip_vlm --skip_graspnet
+cd mda_isaaclab
+timeout 120s python task_319_garbage_sort/visual_grasp_record_demo.py --headless --num_cycles 1 --skip_vlm --skip_graspnet
 ```
 
 Expected result:

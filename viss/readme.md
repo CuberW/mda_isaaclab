@@ -20,7 +20,7 @@ Task319 当前不直接使用 VISS 原始相机位姿。主状态机先在
 VISS v28/Qwen-first 的离线感知脚本：
 
 ```bash
-/home/zhxm/miniconda3/envs/my_task319_safe/bin/python viss/scripts/perception/yolo11_qwen_perception_offline.py --qwen-api-check --qwen-api-style dashscope
+python viss/scripts/perception/yolo11_qwen_perception_offline.py --qwen-api-check --qwen-api-style dashscope
 ```
 
 当前默认权重：

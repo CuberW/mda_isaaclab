@@ -12,11 +12,11 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import Header
 
 # Path configuration
-VIEW_CMD_JSON = "/mnt/d/isaac_projects/v26_view_command.json"
-VIEW_RESULT_JSON = "/mnt/d/isaac_projects/v26_view_result.json"
-VISUAL_PLAN_JSON = "/mnt/d/isaac_projects/v2_visual_task_plan.json"
-ACTION_RESULT_JSON = "/mnt/d/isaac_projects/v27_head_camera_action_result.json"
-DUMMY_IMAGE_PATH = "/home/robot/trashbot_ws/data/images/20260621_003746_fast/frame_000001.jpg"
+VIEW_CMD_JSON = os.environ.get("VIEW_CMD_JSON", "isaac_projects/v26_view_command.json")
+VIEW_RESULT_JSON = os.environ.get("VIEW_RESULT_JSON", "isaac_projects/v26_view_result.json")
+VISUAL_PLAN_JSON = os.environ.get("VISUAL_PLAN_JSON", "isaac_projects/v2_visual_task_plan.json")
+ACTION_RESULT_JSON = os.environ.get("ACTION_RESULT_JSON", "isaac_projects/v27_head_camera_action_result.json")
+DUMMY_IMAGE_PATH = os.environ.get("DUMMY_IMAGE_PATH", "data/images/mock_frame.jpg")
 
 class MockIsaacSim(Node):
     def __init__(self):
