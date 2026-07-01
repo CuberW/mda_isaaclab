@@ -7,10 +7,10 @@ cd mda_isaaclab
 ```
 
 Documentation rule:
-- Every task-319 code change should update `task_319_garbage_sort/CHANGELOG.md`.
-- Any visible behavior change should also add or update the launch/display command in this file.
+- Every task-319 code change should update `docs/task319_delivery/references/CHANGELOG.md`.
+- Any visible behavior change should also add or update the launch/display command in this archived command file.
 - Repository-level setup and current status are summarized in `README.md`.
-- The detailed Chinese development report is `TASK319_DEVELOPMENT_REPORT.md`.
+- The detailed Chinese development report is `docs/task319_delivery/references/TASK319_DEVELOPMENT_REPORT.md`.
 
 ## 1. Visual Scene Preview: robot + table + 10 textured YCB trash objects
 
@@ -405,8 +405,9 @@ Current diagnostic status:
 - The physical state is wired into the loop and records video/metadata.
 - The latest complete demo run is
   `task_319_garbage_sort/output/head_camera_grasp_records/20260625_150100`.
-  It sorted 8 objects with `object_teleport_used=false` at drop time, then
-  stopped on a final return-to-observe Nav2 `STATUS_6`.
+  It sorted 8 objects without teleporting objects at drop time, then stopped
+  when returning to the observation pose because the robot did not reach the
+  target within the configured time limit.
 - Real physical gripper pickup remains the main open issue. SAC training in
   `task319_local_grasp_rl/` is intended to replace the open-loop final descent,
   close, and lift stage.

@@ -5,6 +5,7 @@
 本仓库已按 `mda_isaaclab` 项目整理 3.19 垃圾分类交付材料：
 
 - 部署和运行说明：`docs/task319_delivery/README.md`（含环境版本、依赖安装、启动命令、模型下载位置、常见问题）
+- 课程报告：`docs/task319_delivery/COURSE_REPORT.md`（总体报告，含需求分析、设计、实现、对比测试、鲁棒性和相关工作）
 - 交付文件清单：`docs/task319_delivery/DELIVERY_CHECKLIST.md`
 - 问题调试报告：`docs/task319_delivery/DEBUG_REPORT.md`
 - 答辩 PPT 文稿：`docs/task319_delivery/PPT_OUTLINE.md`
@@ -13,15 +14,15 @@
 
 本仓库当前主线围绕 3.19 垃圾分类抓取任务展开：Kuavo 轮式机器人在 IsaacLab 场景中通过头部 RGB-D 相机识别桌面垃圾，选择合适站位，使用 Nav2 导航到抓取点，根据 VLM 四分类结果移动到对应垃圾桶，并完成投放。
 
-当前正式视觉主线是 `VISS v28/Qwen-first + yolo11s-seg-best + 当前场景头部 RGB-D`。抓取主线仍在调试物理夹爪精度，演示闭环可使用夹爪近距 carry/旧吸取别名跑通全流程；该演示模式不能等同于真实物理夹取最终完成。局部 hover-to-grasp 阶段正在用 skrl SAC/PPO 训练，目标是后续替换开环下降与闭合阶段。
+当前正式视觉主线是 VISS v28、Qwen 优先识别、自训练 YOLO11 分割权重和当前场景头部 RGB-D。抓取主线仍在调试物理夹爪精度，演示闭环可使用夹爪近距辅助携带路径跑通全流程；该演示模式不能等同于真实物理夹取最终完成。局部接近-抓取阶段正在用 skrl SAC/PPO 训练，目标是后续替换开环下降与闭合阶段。
 
 ## Repository Layout
 
-- `task_319_garbage_sort/`: 主任务场景、状态机、Nav2 bridge、抓取/投放逻辑、调试命令和历史记录。
+- `task_319_garbage_sort/`: 主任务场景、状态机、Nav2 bridge、抓取/投放逻辑和运行脚本。
 - `viss/`: VISS 视觉链路。当前主线调用 `viss/scripts/perception/yolo11_qwen_perception_offline.py` 和 `viss/models/yolo11s-seg-best.pt`。
 - `task319_local_grasp_rl/`: IsaacLab DirectRLEnv 局部抓取训练环境，当前用于 hover 后最后下降、闭合、抬升的 SAC/PPO 训练。
 - `robot/`, `models/`: 机器人模型、配置和本地模型说明。
-- `TASK319_DEVELOPMENT_REPORT.md`: 当前开发报告、问题复盘和后续路线。
+- `docs/task319_delivery/`: README、课程报告、调试报告、PPT、视频说明和归档参考资料。
 
 大型外部依赖和生成产物不提交：`IsaacLab/`, `kuavo-ros-opensource/`, `task_319_garbage_sort/output/`, `logs/`, `wandb/`, 第三方研究仓库和本地训练日志均保持 local-only。
 
@@ -85,14 +86,14 @@ python task_319_garbage_sort/task319_grasp_sort_sm.py --mind_sort_demo
 
 这条命令使用当前默认配置：
 
-- VISS v28/Qwen-first 视觉链路。
+- VISS v28 与 Qwen 优先识别视觉链路。
 - `viss/models/yolo11s-seg-best.pt` 精确分割。
 - 当前主场景头部 RGB-D 相机参数，不使用 VISS 原始偏置相机参数。
 - 动态桌边站位规划，Nav2 导航到抓取点，并在站位处重新拍照。
 - 四个硬编码垃圾桶位置和类别映射。
 - 录制外部观察视频，视频保存后退出。
 
-当前完整展示链路使用旧吸取别名/近距 carry 辅助时，可显式运行：
+当前完整展示链路使用近距辅助携带路径时，可显式运行：
 
 ```bash
 python task_319_garbage_sort/task319_grasp_sort_sm.py \
@@ -165,7 +166,7 @@ python task_319_garbage_sort/task319_grasp_sort_sm.py \
   --no-gui_realtime_playback
 ```
 
-分段物理展示视频，不使用吸附、近距 carry 辅助或录制过程物体瞬移：
+分段物理展示视频，不使用吸附、近距辅助携带或录制过程物体瞬移：
 
 ```bash
 # 固定最佳夹持位物理抬升，主线桌面场景保留 10 个物体
@@ -214,7 +215,7 @@ task_319_garbage_sort/output/head_camera_grasp_records/<timestamp>/
 
 - `--mind_sort_demo`
   - 当前完整垃圾分类主线模式。
-  - 目标链路是：头部 RGB-D -> VISS v28/Qwen-first -> 目标选择/分类 -> 动态桌边站位 -> Nav2 到桌边 -> 抓取 -> 导航到垃圾桶 -> 投放/返回。
+  - 目标链路是：头部 RGB-D -> VISS v28 与 Qwen 优先识别 -> 目标选择/分类 -> 动态桌边站位 -> Nav2 到桌边 -> 抓取 -> 导航到垃圾桶 -> 投放/返回。
   - 这是当前主线判断入口。若只想跑当前完整任务，优先使用：
 
 ```bash
@@ -714,8 +715,8 @@ logs/skrl/task319_hover_descent_grasp/
 
 - 真实物理夹爪主线仍不稳定，主要问题是主线物体抓取姿态、最后下降、夹爪闭合和物体接触耦合。
 - GraspNet/AnyGrasp 已经过多轮诊断，当前不作为默认主线；RGB-D 几何和 VISS v28 负责选点与分类。
-- Nav2 可驱动机器人完成大部分路线，但末端定位和 `STATUS_6` 偶发失败仍需要控制参数和重试策略继续优化。
-- 当前完整演示可跑通多个物体分类投放，但依赖近距 carry/旧吸取别名保证展示稳定性。
-- SAC 正在训练局部 hover-to-grasp 策略，后续计划接入到主线 physical grasp 阶段。
+- Nav2 可驱动机器人完成大部分路线，但末端定位和返回观察位未在限定时间内到达的问题仍需要控制参数和重试策略继续优化。
+- 当前完整演示可跑通多个物体分类投放，但依赖近距辅助携带路径保证展示稳定性。
+- SAC 正在训练局部接近-抓取策略，后续计划接入到主线严格物理抓取阶段。
 
-更多细节见 `TASK319_DEVELOPMENT_REPORT.md`、`task_319_garbage_sort/DEMO_COMMANDS.md`、`task_319_garbage_sort/NAV2_MOTION_IMPLEMENTATION.md` 和 `task319_local_grasp_rl/README.md`。
+更多细节见 `docs/task319_delivery/COURSE_REPORT.md`、`docs/task319_delivery/references/TASK319_DEVELOPMENT_REPORT.md`、`docs/task319_delivery/references/DEMO_COMMANDS.md`、`docs/task319_delivery/references/NAV2_MOTION_IMPLEMENTATION.md` 和 `task319_local_grasp_rl/README.md`。

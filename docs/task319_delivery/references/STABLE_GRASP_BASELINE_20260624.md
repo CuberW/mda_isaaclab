@@ -10,7 +10,7 @@ This baseline intentionally prioritizes a stable physical-grasp demonstration ov
 
 ## Main Policy
 
-- Perception: VISS v28 / Qwen-first target detection and classification.
+- Perception: VISS v28 with Qwen-prioritized target detection and classification.
 - Target position: current-frame RGB-D geometric center from the selected target mask.
 - Grasp generator: centroid/RGB-D center, not GraspNet or AnyGrasp.
 - Arm backend: `local_position_primitive`.

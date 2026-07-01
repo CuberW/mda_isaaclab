@@ -23,7 +23,7 @@ Change:
 - `return_home` starts after the drop and records Nav2 return to `home`.
 - The showcase metadata explicitly records that suction, gripper-proximity
   attach, simulated pick, and object teleport during recording are disabled.
-- Added the three launch commands to `DEMO_COMMANDS.md` and summarized them in
+- Added the three launch commands to `docs/task319_delivery/references/DEMO_COMMANDS.md` and summarized them in
   the root `README.md`.
 
 Validation:
@@ -31,7 +31,7 @@ Validation:
   `python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py`
 - Headless smoke for `grasp_fixed` passed and saved an observer video:
   `task_319_garbage_sort/output/head_camera_grasp_records/20260625_235359/external_grasp_demo.mp4`
-- GUI showcase commands are in `task_319_garbage_sort/DEMO_COMMANDS.md` under
+- GUI showcase commands are in `docs/task319_delivery/references/DEMO_COMMANDS.md` under
   `4A-Showcase. Split Physical-Only Video Segments`.
 
 ## 2026-06-25: Add repository README and Task319 development report
@@ -40,10 +40,10 @@ Change:
 - Added root `README.md` with setup, Qwen/DashScope configuration, main
   Task319 launch commands, demo/strict-grasp distinction, output locations, and
   SAC/PPO training commands.
-- Added root `TASK319_DEVELOPMENT_REPORT.md`, a Chinese module-by-module report
+- Added `docs/task319_delivery/references/TASK319_DEVELOPMENT_REPORT.md`, a Chinese module-by-module report
   of the current mainline, development issues, solutions, latest validation
   status, and follow-up plan.
-- Updated `DEMO_COMMANDS.md`, `NAV2_MOTION_IMPLEMENTATION.md`, and
+- Updated `docs/task319_delivery/references/DEMO_COMMANDS.md`, `docs/task319_delivery/references/NAV2_MOTION_IMPLEMENTATION.md`, and
   `task319_local_grasp_rl/README.md` to align with the current v28/Qwen,
   Nav2, gripper-proximity demo, and SAC-training status.
 - Added `task319_local_grasp_rl/wandb.example.sh` and ignored local W&B secrets,
@@ -356,7 +356,7 @@ Observed validation:
 ## 2026-06-24: Switch formal grasp mainline to stable RGB-D center primitive
 
 Change:
-- Archived this configuration in `task_319_garbage_sort/STABLE_GRASP_BASELINE_20260624.md`; the commit is intended to be tagged as `task319-stable-rgbd-center-primitive-20260624`.
+- Archived this configuration in `docs/task319_delivery/references/STABLE_GRASP_BASELINE_20260624.md`; the commit is intended to be tagged as `task319-stable-rgbd-center-primitive-20260624`.
 - Added `--exit_after_video_saved` (default on). After a normal recorded run flushes `external_grasp_demo.mp4` and `video_manifest.json`, Task319 exits the Python process directly instead of waiting for slow Isaac/Kit shutdown. Use `--no-exit_after_video_saved` when debugging shutdown behavior.
 - Changed the default right-arm backend from `curobo_right_arm` to `local_position_primitive` for the formal Task319 mainline.
 - The default grasp now uses the current-frame v28/Qwen target mask, RGB-D geometric center, nominal angled-top-down wrist geometry, position-only safe/pregrasp/final descent, TCP residual feedback correction, slow gripper closure, and contact verification before lift. Wrist axes are not hard constraints unless `--arm_motion_enforce_wrist_orientation` is explicitly enabled.
@@ -822,7 +822,8 @@ Recorded runs:
   `reason=best_sample_error_above_apply_threshold` because `0.203 m > 0.08 m`.
   The right-arm TCP path continued unchanged: GRASP TCP error was `0.016 m`,
   feedback reduced it to `0.010 m`, and lift tracking stayed around `0.018 m`.
-  The final `success=false` is expected for this static-cube calibration run:
+  The final task result is expected to be incomplete for this static-cube
+  calibration run:
   the verification stage cannot see a static cube being lifted above the table.
   Video:
   `task_319_garbage_sort/output/head_camera_grasp_records/20260624_131837/external_grasp_demo.mp4`.
@@ -1087,7 +1088,7 @@ python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py task_319_
 
 Recorded diagnostic run:
 - Command: see the physical mind-sort command in
-  `task_319_garbage_sort/DEMO_COMMANDS.md`.
+  `docs/task319_delivery/references/DEMO_COMMANDS.md`.
 - Output: `task_319_garbage_sort/output/head_camera_grasp_records/20260624_114454/external_grasp_demo.mp4`
 - Metadata:
   `task_319_garbage_sort/output/head_camera_grasp_records/20260624_114454/mind_sort_demo/cycle_0000/physical_grasp/physical_grasp_execution.json`
@@ -1122,7 +1123,7 @@ python -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py
 ```
 
 Recorded run:
-- Command: see the mind-sort delivery command in `task_319_garbage_sort/DEMO_COMMANDS.md`.
+- Command: see the mind-sort delivery command in `docs/task319_delivery/references/DEMO_COMMANDS.md`.
 - Output: `task_319_garbage_sort/output/head_camera_grasp_records/20260624_021520/external_grasp_demo.mp4`
 - Result: completed `trash_00` through `trash_09`; final stop reason was
   `No remaining valid table object for mind-sort demo.`
@@ -1884,7 +1885,7 @@ python3 -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py
 ## 2026-06-23: Promote v27/Qwen perception to the default visual chain
 
 Change:
-- Changed the default `--perception_source` from legacy `yolo_glm` to `viss_qwen_first`, making the v27 Qwen-first + YOLO11 ROI adapter the official visual path for Task319 grasp runs.
+- Changed the default `--perception_source` from legacy `yolo_glm` to `viss_qwen_first`, making the v27 Qwen-prioritized + YOLO11 local-region adapter the official visual path for Task319 grasp runs.
 - Kept the legacy local YOLO+GLM path available through `--perception_source yolo_glm`.
 - Updated the default visual-grasp commands so they no longer need to pass `--perception_source viss_qwen_first` explicitly.
 - Changed the no-target summary text from the legacy YOLO+GLM wording to generic visual-perception wording.
@@ -1923,10 +1924,10 @@ cd mda_isaaclab
 python3 -m py_compile task_319_garbage_sort/visual_grasp_record_demo.py
 ```
 
-## 2026-06-23: Add v27 Qwen-first perception adapter for current head RGB-D scene
+## 2026-06-23: Add v27 Qwen-prioritized perception adapter for current head RGB-D scene
 
 Change:
-- Added `--perception_source viss_qwen_first` to run the v27 Qwen-first + YOLO ROI segmentation pipeline on the current Task319 `head_rgbd` RGB frame.
+- Added `--perception_source viss_qwen_first` to run the v27 Qwen-prioritized + YOLO local-region segmentation pipeline on the current Task319 `head_rgbd` RGB frame.
 - The v27 output is adapted into the existing `YoloInstance` path, so 3D centers, reachability, target selection, grasp planning, and execution still use the current scene depth image, intrinsics, and `camera_to_world`.
 - The v27 script now supports the official DashScope Qwen multimodal-generation API by default through `DASHSCOPE_API_KEY`, plus configurable `--output-json` and `--overlay-output` paths.
 - Navigation waypoint yaw is now recomputed to face the table for table standpoints and face the bins for bin standpoints.
@@ -2363,7 +2364,7 @@ Change:
 - Increased Nav2/Isaac execution speed to `0.45 m/s` linear and `0.75 rad/s` angular. External Nav2 angular commands are scaled by `2.5` before Isaac execution and clamped to the max angular speed.
 - Tuned bundled Nav2 controller parameters: yaw goal tolerance `0.35 rad`, progress checker movement allowance `45 s`, desired linear velocity `0.45 m/s`.
 - Fixed return-home failures from the bin area by routing through explicit Nav2 goals around the side corridor: `RETURN_TO_BIN_STAGING -> RETURN_TO_SIDE_CORRIDOR -> RETURN_HOME_APPROACH -> RETURN_HOME_ALIGN -> RETURN_HOME`.
-- Documented why previous `STATUS_6` results happened: Nav2 controller progress checking aborted goals when the local controller issued angular-only commands near obstacle regions without enough translational progress.
+- Documented why previous return-to-observe failures happened: Nav2 controller progress checking aborted goals when the local controller issued angular-only commands near obstacle regions without enough translational progress.
 
 Verification:
 
@@ -2631,7 +2632,7 @@ Expected result:
 ## 2026-06-23 - Align VISS v28 README defaults and raise head camera resolution
 
 - Set the formal Task319 visual chain default to `v28_original` with `viss/models/yolo11s-seg-best.pt`, matching the `viss/readme.md` v28 model naming.
-- Aligned VISS Qwen-first parameters with `viss/readme.md`: `conf=0.15`, `roi_expand=2.0`, `verify_mode=none`, `max_qwen_candidates=3`, `max_roi_refine=3`, `timeout=90s`, and no accepted fallback result.
+- Aligned VISS Qwen-prioritized parameters with `viss/readme.md`: `conf=0.15`, `roi_expand=2.0`, `verify_mode=none`, `max_qwen_candidates=3`, `max_roi_refine=3`, `timeout=90s`, and no accepted fallback result.
 - Updated the VISS subprocess adapter for the newer script CLI: unsupported legacy `--output-json`, `--overlay-output`, and `--qwen-api-style` arguments are detected and omitted; output is read from the script's default `~/trashbot_ws/data/logs` under an isolated per-cycle HOME.
 - Map `DASHSCOPE_API_KEY` to `QWEN_API_KEY` and default `QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1` for the VISS OpenAI-compatible Qwen client.
 - Raised the head RGB-D camera default resolution from `640x480` to `1280x960` via `--head_camera_width/--head_camera_height`.

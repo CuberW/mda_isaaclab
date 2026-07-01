@@ -43,8 +43,9 @@ interfaces, or motion-only validation results should update this file.
   - failed scene keys: none
   - drop policy: right gripper TCP moves over the selected bin opening before
     release; per-cycle metadata records `object_teleport_used=false`
-  - final result: stopped on return-to-observe `STATUS_6` after the completed
-    object cycles
+  - final result: stopped when returning to the observation pose after the
+    completed object cycles because the robot did not reach the target within
+    the configured time limit
 - Earlier mind-sort validation:
   - run directory:
     `task_319_garbage_sort/output/head_camera_grasp_records/20260624_001406`
@@ -866,11 +867,12 @@ task_319_garbage_sort/output/head_camera_grasp_records/20260622_220145/external_
 
 ## Nav2 Failure Semantics
 
-`STATUS_6` in the motion metadata is a Nav2 action failure, not a Python crash.
-In the runs that failed before `20260622_220145`, `controller_server` printed
-`Failed to make progress`: the local controller kept sending angular-only
-commands near the bin/table obstacle region, the robot did not make enough
-translational progress, and Nav2 aborted the current `NavigateToPose` goal.
+The return-to-observe failure in the motion metadata is a Nav2 action failure,
+not a Python crash. In the runs that failed before `20260622_220145`,
+`controller_server` printed `Failed to make progress`: the local controller kept
+sending angular-only commands near the bin/table obstacle region, the robot did
+not make enough translational progress, and Nav2 aborted the current navigation
+goal.
 
 The fix was to keep using Nav2 but split the return route into safer
 intermediate goals around the table side corridor instead of asking Nav2 to

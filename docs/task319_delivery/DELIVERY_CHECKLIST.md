@@ -14,7 +14,7 @@
 | Nav2/ROS 脚本 | `task_319_garbage_sort/scripts/ros2_*.py` | Nav2 stack、goal client、socket bridge、cmd_vel 测试 |
 | Kuavo IK 脚本 | `task_319_garbage_sort/scripts/kuavo_*.py`, `task_319_garbage_sort/scripts/kuavo_analytic_ik_cli.cpp` | Kuavo 官方 IK bridge 和解析 IK 诊断 |
 | 双指夹爪 URDF | `task_319_garbage_sort/two_finger_gripper.urdf` | 右手夹爪模型 |
-| 局部抓取 RL | `task319_local_grasp_rl/` | hover-to-grasp SAC/PPO 后续接入 |
+| 局部抓取强化学习 | `task319_local_grasp_rl/` | 后续接入局部接近、闭合和抬升策略 |
 
 ## 2. 仿真工程文件
 
@@ -34,8 +34,8 @@
 | --- | --- |
 | 桌面/地面至少 10 件垃圾 | `TRASH_SCENE_OBJECTS` 含 10 个桌面垃圾 |
 | 包含 4 类 | 可回收物、厨余垃圾、有害垃圾、其他垃圾 |
-| 四类垃圾桶颜色标识 | recycle 蓝、kitchen 绿、hazard 红、other 灰 |
-| 识别类别、位置、抓取姿态 | VISS/Qwen 输出类别，RGB-D 输出 3D 位置，top grasp 输出 TCP pose |
+| 四类垃圾桶颜色标识 | 可回收桶蓝色、厨余桶绿色、有害桶红色、其他桶灰色 |
+| 识别类别、位置、抓取姿态 | VISS/Qwen 输出类别，RGB-D 输出三维位置，顶部抓取模块输出夹爪姿态 |
 | 识别、抓取、移动至对应垃圾桶、投放 | `--mind_sort_demo` 状态机覆盖完整流程 |
 | 统计准确率/成功率 | `mind_sort_task_queue.json`, `mind_sort_cycle.json`, `isaac_task_execution_result.json` |
 | 干扰样本 | `trash_potted_meat_can_0` 食物残留金属罐、`trash_dirty_bottle` 历史场景脏瓶样本 |
@@ -72,14 +72,18 @@
 | 材料 | 路径 |
 | --- | --- |
 | 部署 README | `docs/task319_delivery/README.md` |
+| 课程报告 | `docs/task319_delivery/COURSE_REPORT.md` |
 | 调试报告 | `docs/task319_delivery/DEBUG_REPORT.md` |
 | PPT 文稿 | `docs/task319_delivery/PPT_OUTLINE.md` |
 | PPT 文件 | `docs/task319_delivery/TASK319_DEFENSE_PPT.pptx` |
 | 视频证据说明 | `docs/task319_delivery/VIDEO_EVIDENCE.md` |
-| 开发报告 | `TASK319_DEVELOPMENT_REPORT.md` |
-| 命令手册 | `task_319_garbage_sort/DEMO_COMMANDS.md` |
-| 导航实现记录 | `task_319_garbage_sort/NAV2_MOTION_IMPLEMENTATION.md` |
-| 稳定抓取 baseline | `task_319_garbage_sort/STABLE_GRASP_BASELINE_20260624.md` |
+| 开发过程报告 | `docs/task319_delivery/references/TASK319_DEVELOPMENT_REPORT.md` |
+| 算法理论说明 | `docs/task319_delivery/references/task319_algorithm_theory.md` |
+| 状态机讲解 | `docs/task319_delivery/references/task319_visual_grasp_state_machine_explainer.md` |
+| 命令手册 | `docs/task319_delivery/references/DEMO_COMMANDS.md` |
+| 导航实现记录 | `docs/task319_delivery/references/NAV2_MOTION_IMPLEMENTATION.md` |
+| 稳定抓取 baseline | `docs/task319_delivery/references/STABLE_GRASP_BASELINE_20260624.md` |
+| 参考论文 | `docs/task319_delivery/references/A_Deep-Intelligence_Framework_for_Online_Video_Processing.pdf` |
 
 ## 6. 视频和结果文件
 
@@ -96,6 +100,7 @@
 ## 7. 当前结论
 
 - 系统级完整链路已经具备：识别、分类、动态站位、Nav2、到桶口释放。
-- 完整多物体演示完成 8 个成功 cycle，投放阶段不使用物体瞬移。
+- 完整多物体演示完成 8 个成功物体处理轮次，投放阶段不使用物体瞬移。
 - 严格物理夹爪仍是主要风险项，最新单轮严格验证未通过。
-- 答辩时应明确辅助演示和严格物理验收的区别。
+- 课程报告采用逻辑动画、完整主线演示、严格物理单轮三组代表性实验记录；同时说明开发期间另有约 10-20 倍历史调试测试，用作工程覆盖度和稳定性优化说明。
+- 交付材料中已将系统级辅助演示和严格物理验收分开统计。

@@ -31,7 +31,8 @@ task_319_garbage_sort/output/head_camera_grasp_records/20260625_150100/mind_sort
 - `video_manifest.json` 中仍记录原始视频名 `external_grasp_demo.mp4`。
 - 当前目录实际保留的视频文件名是 `grasp8.mp4`。
 - GitHub 提交版视频由 `grasp8.mp4` 压缩生成，展示同一条 8 个物体识别、分类、导航到桶、桶口释放流程。
-- 该 run 启用了显式辅助抓取路径，不能作为严格物理夹爪全成功证明。
+- 该实验启用了显式辅助抓取路径，定位为系统级闭环演示。
+- 课程报告将该实验记为 8/8 已完成物体处理轮次成功；全局结束原因是第 9 次返回观察位时未能在限定时间内到达预定观察点。
 
 ## 2. 最新严格物理单轮视频
 
@@ -50,7 +51,9 @@ task_319_garbage_sort/output/head_camera_grasp_records/20260626_145846/mind_sort
 - 目标：`trash_potted_meat_can_0`
 - 分类：厨余垃圾
 - 严格物理抓取：失败
-- 原因：cuRobo Cartesian final descent 未到达目标/近距阈值，未启用辅助 attach/carry。
+- 原因：机械臂末端在最后下降阶段未到达预定抓取位置，未启用辅助携带路径。
+
+该记录用于评估严格物理夹爪路径，与完整演示视频中的系统级辅助抓取路径分开统计。
 
 ## 3. 重新录制命令
 
